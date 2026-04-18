@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Environnement
+.env
+*.env
+
+# Données & Modèles
+data/raw/
+models/
+*.pkl
+*.h5
+
+# Logs
+*.log
+logs/
+airflow/logs/
+
+# Docker volumes
+docker/volumes/
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+
+# MLflow
+mlruns/
+mlartifacts/
+
+# Airflow
+airflow.cfg
+airflow.db
+standalone_admin_password.txt

@@ -1,0 +1,44 @@
+# ── Base ────────────────────────────────
+python-dotenv==1.0.1
+pydantic==2.6.1
+pydantic-settings==2.2.1
+
+# ── Data ────────────────────────────────
+faker==24.0.0
+psycopg2-binary==2.9.9
+pandas==2.2.0
+numpy==1.26.4
+sqlalchemy==2.0.27
+redis==5.0.1
+
+# ── Vector Store ────────────────────────
+qdrant-client==1.8.0
+sentence-transformers==2.5.1
+
+# ── LLM & RAG ───────────────────────────
+openai==1.12.0
+langchain==0.1.9
+langchain-openai==0.0.6
+langchain-community==0.0.24
+
+# ── API ─────────────────────────────────
+fastapi==0.110.0
+uvicorn==0.27.1
+
+# ── MLflow ──────────────────────────────
+mlflow==2.10.2
+
+# ── Airflow (install séparé) ────────────
+# apache-airflow==2.8.3
+
+# ── Monitoring ──────────────────────────
+prometheus-client==0.20.0
+elasticsearch==8.12.1
+python-logstash==0.4.8
+
+# ── Dev ─────────────────────────────────
+pre-commit==3.6.2
+black==24.2.0
+flake8==7.0.0
+pytest==8.0.2
+httpx==0.27.0

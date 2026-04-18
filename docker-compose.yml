@@ -1,0 +1,344 @@
+version: '3.8'
+
+# ═══════════════════════════════════════════════════════════════
+# MLOPS RAG DELIVERY — Stack complet
+# Services : PostgreSQL, Redis, Qdrant, MLflow,
+#            Elasticsearch, Logstash, Kibana,
+#            Airflow (webserver + scheduler + worker + triggerer),
+#            Prometheus, Grafana, FastAPI
+# ═══════════════════════════════════════════════════════════════
+
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.8.3
+  environment: &airflow-env
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/airflow_db
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/airflow_db
+    AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    _PIP_ADDITIONAL_REQUIREMENTS: "psycopg2-binary qdrant-client elasticsearch"
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./plugins:/opt/airflow/plugins
+    - ./src:/opt/airflow/src
+    - ./.env:/opt/airflow/.env
+  depends_on: &airflow-deps
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  networks:
+    - rag_network
+
+services:
+
+  # ─────────────────────────────────────────
+  # 1. PostgreSQL — Base de données principale
+  # ─────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: rag_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_MULTIPLE_DATABASES: ${POSTGRES_DB},airflow_db,mlflow_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./src/database/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rag_network
+
+  # ─────────────────────────────────────────
+  # 2. Redis — Cache + Broker Airflow
+  # ─────────────────────────────────────────
+  redis:
+    image: redis:7.2-alpine
+    container_name: rag_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rag_network
+
+  # ─────────────────────────────────────────
+  # 3. Qdrant — Vector Store
+  # ─────────────────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:v1.8.3
+    container_name: rag_qdrant
+    restart: unless-stopped
+    ports:
+      - "6334:6333"
+      - "6335:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:6333/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rag_network
+
+  # ─────────────────────────────────────────
+  # 4. MLflow — Experiment Tracking
+  # ─────────────────────────────────────────
+  mlflow:
+    image: python:3.11-slim
+    container_name: rag_mlflow
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    command: >
+      bash -c "pip install mlflow psycopg2-binary boto3 -q &&
+               mlflow server
+               --host 0.0.0.0
+               --port 5000
+               --backend-store-uri postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/mlflow_db
+               --default-artifact-root /mlflow/artifacts"
+    volumes:
+      - mlflow_data:/mlflow
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - rag_network
+
+  # ═══════════════════════════════════════════
+  # ELK STACK — Logs centralisés
+  # ═══════════════════════════════════════════
+
+  # 5. Elasticsearch — Moteur de recherche & stockage logs
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.12.2
+    container_name: rag_elasticsearch
+    restart: unless-stopped
+    environment:
+      - node.name=elasticsearch
+      - cluster.name=rag-cluster
+      - discovery.type=single-node
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+      - bootstrap.memory_lock=true
+      - xpack.security.enabled=true
+      - xpack.security.http.ssl.enabled=false
+      - xpack.security.transport.ssl.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -u elastic:${ELASTIC_PASSWORD} http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\"\\|\"status\":\"yellow\"'"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+    networks:
+      - rag_network
+
+  # 6. Logstash — Collecte & transformation des logs
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.12.2
+    container_name: rag_logstash
+    restart: unless-stopped
+    ports:
+      - "5044:5044"    # Beats input
+      - "5001:5000"    # TCP input (app logs) — évite conflit avec MLflow
+      - "9600:9600"    # Monitoring API
+    environment:
+      LS_JAVA_OPTS: "-Xms256m -Xmx256m"
+      LOGSTASH_INTERNAL_PASSWORD: ${LOGSTASH_INTERNAL_PASSWORD}
+      ELASTIC_PASSWORD: ${ELASTIC_PASSWORD}
+    volumes:
+      - ./config/logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - ./config/logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+      - logstash_data:/usr/share/logstash/data
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - rag_network
+
+  # 7. Kibana — Visualisation des logs
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.12.2
+    container_name: rag_kibana
+    restart: unless-stopped
+    ports:
+      - "5601:5601"
+    environment:
+      - SERVERNAME=kibana
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - ELASTICSEARCH_USERNAME=kibana_system
+      - ELASTICSEARCH_PASSWORD=${KIBANA_PASSWORD}
+      - XPACK_SECURITY_ENCRYPTIONKEY=fhjskloppd678ehkdfdlliverpoolfcl
+      - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=fhjskloppd678ehkdfdlliverpoolfcl
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - rag_network
+
+  # ═══════════════════════════════════════════
+  # AIRFLOW — Orchestration des pipelines
+  # ═══════════════════════════════════════════
+
+  # 8. Airflow Init — initialisation unique
+  airflow-init:
+    <<: *airflow-common
+    container_name: rag_airflow_init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create \
+          --username ${AIRFLOW_ADMIN_USERNAME:-admin} \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email ${AIRFLOW_ADMIN_EMAIL} \
+          --password ${AIRFLOW_ADMIN_PASSWORD:-admin123}
+        echo "✅ Airflow initialisé"
+    restart: on-failure
+
+  # 9. Airflow Webserver — Interface UI
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: rag_airflow_webserver
+    restart: unless-stopped
+    command: webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      <<: *airflow-deps
+      airflow-init:
+        condition: service_completed_successfully
+
+  # 10. Airflow Scheduler — Planificateur
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: rag_airflow_scheduler
+    restart: unless-stopped
+    command: scheduler
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    depends_on:
+      <<: *airflow-deps
+      airflow-init:
+        condition: service_completed_successfully
+
+  # 11. Airflow Worker — Exécution des tâches (Celery)
+  airflow-worker:
+    <<: *airflow-common
+    container_name: rag_airflow_worker
+    restart: unless-stopped
+    command: celery worker
+    environment:
+      <<: *airflow-env
+      DUMB_INIT_SETSID: "0"
+    depends_on:
+      <<: *airflow-deps
+      airflow-init:
+        condition: service_completed_successfully
+
+  # 12. Airflow Triggerer — Déclencheur de tâches différées
+  airflow-triggerer:
+    <<: *airflow-common
+    container_name: rag_airflow_triggerer
+    restart: unless-stopped
+    command: triggerer
+    depends_on:
+      <<: *airflow-deps
+      airflow-init:
+        condition: service_completed_successfully
+
+  # ═══════════════════════════════════════════
+  # MONITORING — Métriques système
+  # ═══════════════════════════════════════════
+
+  # 13. Prometheus — Collecte métriques
+  prometheus:
+    image: prom/prometheus:v2.50.1
+    container_name: rag_prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=15d'
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - rag_network
+
+  # 14. Grafana — Dashboards métriques
+  grafana:
+    image: grafana/grafana:10.3.3
+    container_name: rag_grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: false
+      GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    networks:
+      - rag_network
+
+# ─────────────────────────────────────────
+# Volumes persistants
+# ─────────────────────────────────────────
+volumes:
+  postgres_data:
+  qdrant_data:
+  mlflow_data:
+  elasticsearch_data:
+  logstash_data:
+  prometheus_data:
+  grafana_data:
+
+# ─────────────────────────────────────────
+# Réseau
+# ─────────────────────────────────────────
+networks:
+  rag_network:
+    driver: bridge

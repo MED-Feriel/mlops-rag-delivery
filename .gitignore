@@ -10,6 +10,7 @@ build/
 # Environnement
 .env
 *.env
+.env.local
 
 # Données & Modèles
 data/raw/
@@ -38,3 +39,9 @@ mlartifacts/
 airflow.cfg
 airflow.db
 standalone_admin_password.txt
+
+# Backups
+src_backup_*/
+
+# Qdrant local (si volume monté hors docker)
+qdrant_storage/

@@ -1,0 +1,29 @@
+[run]
+source = src
+omit =
+    # Variantes avancées (MLflow / versioning) — couvertes par les tests d'intégration
+    src/api/routes_with_mlflow.py
+    src/api/routes_with_versioning.py
+    src/rag/rag_with_mlflow.py
+    src/rag/rag_with_versioning.py
+    src/rag/rag_pipeline_with_mlflow.py
+    src/llm/llm_with_mlflow.py
+    src/monitoring/mlflow_tracker.py
+    src/monitoring/model_versioning.py
+    # Composants nécessitant des services externes (Kafka, Postgres) — testés en intégration
+    src/simulator/main.py
+    src/simulator/realtime_producer.py
+    src/simulator/state_machine.py
+    src/ingestion/extract.py
+    src/ingestion/run_etl.py
+    # Fichiers d'init vides et __main__
+    src/**/__init__.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+precision = 2
+show_missing = True

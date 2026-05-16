@@ -82,7 +82,7 @@ Trois workflows GitHub Actions sont fournis dans `.github/workflows/` :
 
 | Workflow                | Trigger                                  | Rôle                                                 |
 |-------------------------|------------------------------------------|------------------------------------------------------|
-| `ci.yml`                | push (toutes branches), PR vers `main`   | Lint (flake8 + black), tests unitaires + couverture (≥30%), tests d'intégration |
+| `ci.yml`                | push (toutes branches), PR vers `main`   | Lint (flake8 + black), tests unitaires + couverture (≥70%), tests d'intégration |
 | `cd.yml`                | push sur `main`                          | Build & push des images Docker `api` / `simulator` vers `ghcr.io` (tags `latest`, `${{ sha }}`, et `vX.Y.Z` si le message de commit contient `release vX.Y.Z`) |
 | `model_validation.yml`  | cron nightly 03:00 UTC + dispatch manuel + PR sur code RAG | Exécute `scripts/run_ragas_eval.py` dans le container API ; échoue si `faithfulness < 0.65` ou `answer_relevancy < 0.60` ; commente le résultat sur la PR |
 

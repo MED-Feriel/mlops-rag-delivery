@@ -60,10 +60,10 @@ jobs:
             --cov-report=term-missing \
             -v
 
-      - name: Coverage threshold check (>= 30%)
+      - name: Coverage threshold check (>= 70%)
         run: |
           pip install coverage
-          coverage report --fail-under=30
+          coverage report --fail-under=70
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4

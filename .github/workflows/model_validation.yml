@@ -18,6 +18,9 @@ permissions:
   pull-requests: write
   packages: read
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   ragas-eval:
     name: Run RAGAS evaluation

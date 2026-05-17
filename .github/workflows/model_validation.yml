@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   ragas-eval:
-    name: Run RAGAS evaluation
+    name: Eval - RAGAS (faithfulness + relevancy)
     runs-on: ubuntu-latest
     env:
       QDRANT_HOST: ${{ secrets.QDRANT_HOST }}

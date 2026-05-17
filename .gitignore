@@ -45,3 +45,12 @@ src_backup_*/
 
 # Qdrant local (si volume monté hors docker)
 qdrant_storage/
+
+# Coverage / test artifacts
+.coverage
+coverage.xml
+htmlcov/
+
+# Local tools
+actionlint
+bin/

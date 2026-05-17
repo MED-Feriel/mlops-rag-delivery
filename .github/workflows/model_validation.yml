@@ -1,0 +1,115 @@
+name: Model Validation (RAGAS)
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/rag/**"
+      - "src/retrieval/**"
+      - "src/llm/**"
+      - "src/embeddings/**"
+      - "scripts/run_ragas_eval.py"
+
+permissions:
+  contents: read
+  pull-requests: write
+  packages: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  ragas-eval:
+    name: Run RAGAS evaluation
+    runs-on: ubuntu-latest
+    env:
+      QDRANT_HOST: ${{ secrets.QDRANT_HOST }}
+      QDRANT_PORT: ${{ secrets.QDRANT_PORT }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      FAITHFULNESS_THRESHOLD: "0.65"
+      ANSWER_RELEVANCY_THRESHOLD: "0.60"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Lowercase repository name
+        id: repo
+        run: echo "name=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Pull API image
+        run: docker pull ghcr.io/${{ steps.repo.outputs.name }}/api:latest
+
+      - name: Run RAGAS evaluation in container
+        id: ragas
+        run: |
+          mkdir -p reports
+          docker run --rm \
+            -e QDRANT_HOST="${QDRANT_HOST}" \
+            -e QDRANT_PORT="${QDRANT_PORT}" \
+            -e POSTGRES_PASSWORD="${POSTGRES_PASSWORD}" \
+            -v "${{ github.workspace }}/scripts:/app/scripts:ro" \
+            -v "${{ github.workspace }}/reports:/app/reports" \
+            ghcr.io/${{ steps.repo.outputs.name }}/api:latest \
+            python scripts/run_ragas_eval.py --output /app/reports/ragas.json | tee reports/ragas_stdout.txt
+
+      - name: Check RAGAS thresholds
+        id: check
+        run: |
+          python - <<'EOF'
+          import json, os, sys, pathlib
+          p = pathlib.Path("reports/ragas.json")
+          if not p.exists():
+              print("::error::RAGAS report not found at reports/ragas.json")
+              sys.exit(1)
+          data = json.loads(p.read_text())
+          faith = float(data.get("faithfulness", 0.0))
+          relev = float(data.get("answer_relevancy", 0.0))
+          ft = float(os.environ["FAITHFULNESS_THRESHOLD"])
+          rt = float(os.environ["ANSWER_RELEVANCY_THRESHOLD"])
+          summary = (
+              f"## RAGAS Evaluation Results\n\n"
+              f"| Metric | Score | Threshold | Status |\n"
+              f"|--------|-------|-----------|--------|\n"
+              f"| Faithfulness | {faith:.3f} | {ft:.2f} | {'PASS' if faith >= ft else 'FAIL'} |\n"
+              f"| Answer Relevancy | {relev:.3f} | {rt:.2f} | {'PASS' if relev >= rt else 'FAIL'} |\n"
+          )
+          pathlib.Path("reports/summary.md").write_text(summary)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+              f.write(summary)
+          if faith < ft or relev < rt:
+              print(f"::error::RAGAS thresholds not met (faith={faith}, relev={relev})")
+              sys.exit(1)
+          EOF
+
+      - name: Upload reports artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ragas-report
+          path: reports/
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'reports/summary.md';
+            const body = fs.existsSync(path)
+              ? fs.readFileSync(path, 'utf8')
+              : 'RAGAS evaluation did not produce a summary (check workflow logs).';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });

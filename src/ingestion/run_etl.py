@@ -76,39 +76,74 @@ async def run() -> None:
                 mlflow.log_param("status", "no_documents")
                 return
 
-            # EMBEDDING
+            # EMBEDDING + UPSERT (batched pour mémoire + progression)
             embedder = Embedder(
                 model_name=s.embedding_model, batch_size=s.embedding_batch_size
             )
             store = QdrantVectorStore(
                 host=s.qdrant_host, port=s.qdrant_port, collection=s.qdrant_collection
             )
+            # Reset collection pour repartir propre
+            store.reset()
+            log.info("Qdrant collection réinitialisée", collection=s.qdrant_collection)
 
-            start_embedding = time.time()
-            log.info("calcul embeddings", n=len(texts))
-            vectors = embedder.embed(texts)
-            embedding_time = time.time() - start_embedding
-            log.info("embeddings terminés", duration_s=embedding_time)
+            # Batch limité par la taille payload Qdrant (32 MB) : ~3800 docs max
+            BATCH = 2000
+            PROGRESS_EVERY = 10000
+            total = len(ids)
+            n_upserted = 0
+            t_embed_total = 0.0
+            t_upsert_total = 0.0
+            t0 = time.time()
+
+            log.info(
+                "démarrage embedding+upsert batched", total=total, batch_size=BATCH
+            )
+            for start in range(0, total, BATCH):
+                end = min(start + BATCH, total)
+                b_texts = texts[start:end]
+                b_ids = ids[start:end]
+                b_metas = metas[start:end]
+
+                t1 = time.time()
+                b_vectors = embedder.embed(b_texts)
+                t_embed_total += time.time() - t1
+
+                t2 = time.time()
+                n_upserted += store.upsert(b_ids, b_vectors, b_texts, b_metas)
+                t_upsert_total += time.time() - t2
+
+                # Log toutes les PROGRESS_EVERY vecteurs (ou à la fin)
+                if (end // PROGRESS_EVERY) > (
+                    (start) // PROGRESS_EVERY
+                ) or end == total:
+                    elapsed = time.time() - t0
+                    rate = end / max(elapsed, 0.001)
+                    eta_s = (total - end) / max(rate, 0.001)
+                    log.info(
+                        "progress",
+                        processed=end,
+                        total=total,
+                        pct=round(100 * end / total, 1),
+                        rate_per_sec=round(rate, 1),
+                        eta_s=round(eta_s, 1),
+                    )
+
             mlflow.log_metrics(
                 {
-                    "embedding_duration_s": embedding_time,
-                    "vectors_count": len(vectors),
-                    "vector_dimension": len(vectors[0]) if vectors else 0,
+                    "embedding_duration_s": t_embed_total,
+                    "upsert_duration_s": t_upsert_total,
+                    "vectors_count": total,
+                    "upserted_vectors": n_upserted,
+                    "vector_dimension": 384,
                 }
             )
-
-            # UPSERT QDRANT
-            start_upsert = time.time()
-            n = store.upsert(ids, vectors, texts, metas)
-            upsert_time = time.time() - start_upsert
             log.info(
-                "upsert Qdrant terminé",
-                upserted=n,
-                collection=s.qdrant_collection,
-                duration_s=upsert_time,
-            )
-            mlflow.log_metrics(
-                {"upserted_vectors": n, "upsert_duration_s": upsert_time}
+                "embedding+upsert terminés",
+                total=total,
+                upserted=n_upserted,
+                embed_s=round(t_embed_total, 1),
+                upsert_s=round(t_upsert_total, 1),
             )
 
             # LOG STATUS

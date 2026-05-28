@@ -517,3 +517,97 @@ class ModelVersioningService:
         except Exception as e:
             log.error(f"[ModelVersioning] Erreur create_report: {e}", exc_info=True)
             return {}
+
+
+class ModelVersionManager:
+    """
+    Façade simple sur le Model Registry pour le modèle Gemma3-RAG.
+
+    Utilisée par l'API FastAPI pour:
+      - récupérer la version du modèle en Production au démarrage,
+      - logger cette version dans chaque run d'inférence,
+      - lister les versions disponibles.
+
+    Délègue à ModelVersioningService pour la logique MLflow.
+    """
+
+    def __init__(
+        self,
+        tracking_uri: str = "http://localhost:5000",
+        model_name: str = "gemma3-rag-livraison",
+    ):
+        self.model_name = model_name
+        self.tracking_uri = tracking_uri
+        self._service = ModelVersioningService(
+            tracking_uri=tracking_uri, model_registry_name=model_name
+        )
+        self.client = self._service.client
+
+    def get_production_version(self) -> Optional[Dict[str, Any]]:
+        """Retourner {version, stage, run_id, semver, ...} de la Production, ou None."""
+        try:
+            versions = self.client.search_model_versions(f"name='{self.model_name}'")
+            prod = [v for v in versions if v.current_stage == "Production"]
+            if not prod:
+                log.warning(
+                    "[ModelVersionManager] Aucune version Production",
+                    model=self.model_name,
+                )
+                return None
+            latest = max(prod, key=lambda v: int(v.version))
+            return {
+                "version": latest.version,
+                "stage": latest.current_stage,
+                "run_id": latest.run_id,
+                "source": latest.source,
+                "tags": dict(latest.tags) if latest.tags else {},
+                "semver": (latest.tags or {}).get("semver"),
+                "model_name": self.model_name,
+            }
+        except Exception as e:
+            log.error(
+                f"[ModelVersionManager] Erreur get_production_version: {e}",
+                exc_info=True,
+            )
+            return None
+
+    def promote_to_production(
+        self, version: int, archive_existing: bool = True
+    ) -> bool:
+        """Promouvoir une version vers Production (archive l'ancienne par défaut)."""
+        try:
+            self._service.transition_model_stage(
+                version=version, stage="Production", archive_existing=archive_existing
+            )
+            return True
+        except Exception as e:
+            log.error(
+                f"[ModelVersionManager] Erreur promote_to_production: {e}",
+                exc_info=True,
+            )
+            return False
+
+    def list_versions(self, stage: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Lister toutes les versions (optionnellement filtrées par stage)."""
+        try:
+            versions = self.client.search_model_versions(f"name='{self.model_name}'")
+            result = []
+            for v in versions:
+                if stage and v.current_stage != stage:
+                    continue
+                result.append(
+                    {
+                        "version": v.version,
+                        "stage": v.current_stage,
+                        "status": v.status,
+                        "run_id": v.run_id,
+                        "semver": (v.tags or {}).get("semver"),
+                        "created_at": datetime.fromtimestamp(
+                            v.creation_timestamp / 1000
+                        ).isoformat(),
+                    }
+                )
+            return sorted(result, key=lambda x: int(x["version"]), reverse=True)
+        except Exception as e:
+            log.error(f"[ModelVersionManager] Erreur list_versions: {e}", exc_info=True)
+            return []

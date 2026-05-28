@@ -120,7 +120,7 @@ class TestMLflowTracker:
         mock_search.return_value.iloc = MagicMock()
         mock_search.return_value.head.return_value.iloc = []
 
-        tracker.compare_experiments("faithfulness", top_n=5)
+        _ = tracker.compare_experiments("faithfulness", top_n=5)
 
         # Vérifier que search_runs a été appelé
         mock_search.assert_called_once()

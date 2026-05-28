@@ -83,6 +83,14 @@ def chunk_documents(
     out_texts: list[str] = []
     out_metas: list[dict] = []
     for doc_id, text, meta in zip(ids, texts, metas):
+        # Les documents de synthèse (top-N, agrégations) doivent rester entiers
+        # pour préserver l'ordre du classement — un chunker qui sépare le titre
+        # de la liste casse le sens de "le plus problématique #1".
+        if meta.get("source") == "synthese":
+            out_ids.append(doc_id)
+            out_texts.append(text)
+            out_metas.append(meta)
+            continue
         pieces = chunk_long_text(
             text, chunk_size=chunk_size, chunk_overlap=chunk_overlap
         )

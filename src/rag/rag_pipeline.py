@@ -1,11 +1,17 @@
-"""Pipeline RAG complet : retrieve -> build context -> generate (Gemma3:1b)."""
+"""Pipeline RAG complet : query_rewrite -> retrieve -> build context -> generate."""
 
 from typing import AsyncGenerator, Optional
+
+import structlog
+
 from src.embeddings.embedder import Embedder
-from src.vector_store.qdrant_client import QdrantVectorStore
-from src.retrieval.retrieval_service import RetrievalService
 from src.llm.llm_service import LLMService
 from src.rag.context_builder import build_context
+from src.rag.query_rewriter import filter_by_date_range, rewrite_query
+from src.retrieval.retrieval_service import RetrievalService
+from src.vector_store.qdrant_client import QdrantVectorStore
+
+log = structlog.get_logger()
 
 
 class RAGPipeline:
@@ -28,10 +34,34 @@ class RAGPipeline:
             timeout=settings.ollama_timeout,
         )
 
+    def _rewrite_and_merge_filters(
+        self, question: str, user_filters: Optional[dict]
+    ) -> tuple[Optional[dict], Optional[tuple]]:
+        """Extrait les filtres d'intent et les fusionne avec ceux passés par l'API.
+
+        Les filtres explicites (`user_filters`) ont priorité sur ceux dérivés
+        de la question — on ne réécrase pas un choix conscient de l'appelant.
+        """
+        rewritten = rewrite_query(question)
+        derived = rewritten.get("qdrant_filters") or {}
+        merged = (
+            {**derived, **(user_filters or {})} if (derived or user_filters) else None
+        )
+        if rewritten.get("matched"):
+            log.info("query_rewriter", **rewritten["matched"])
+        return merged, rewritten.get("date_range")
+
     async def query(
         self, question: str, top_k: int = 8, filters: Optional[dict] = None
     ) -> dict:
-        chunks = self.retriever.retrieve(question, top_k=top_k, filters=filters)
+        merged_filters, date_range = self._rewrite_and_merge_filters(question, filters)
+        # Si on filtre par date post-retrieval, on récupère plus large pour
+        # garder du contexte après l'élagage.
+        retrieve_k = top_k * 3 if date_range else top_k
+        chunks = self.retriever.retrieve(
+            question, top_k=retrieve_k, filters=merged_filters
+        )
+        chunks = filter_by_date_range(chunks, date_range)[:top_k]
         context = build_context(chunks)
         answer = await self.llm.generate(context=context, question=question)
         return {"answer": answer, "contexts": chunks}
@@ -39,7 +69,12 @@ class RAGPipeline:
     async def stream(
         self, question: str, top_k: int = 8, filters: Optional[dict] = None
     ) -> AsyncGenerator[str, None]:
-        chunks = self.retriever.retrieve(question, top_k=top_k, filters=filters)
+        merged_filters, date_range = self._rewrite_and_merge_filters(question, filters)
+        retrieve_k = top_k * 3 if date_range else top_k
+        chunks = self.retriever.retrieve(
+            question, top_k=retrieve_k, filters=merged_filters
+        )
+        chunks = filter_by_date_range(chunks, date_range)[:top_k]
         context = build_context(chunks)
         async for token in self.llm.stream(context=context, question=question):
             yield token
@@ -60,7 +95,14 @@ class RAGPipeline:
         self, messages: list[dict], top_k: int = 8, filters: Optional[dict] = None
     ) -> dict:
         embedding_query = self._build_embedding_query(messages)
-        chunks = self.retriever.retrieve(embedding_query, top_k=top_k, filters=filters)
+        merged_filters, date_range = self._rewrite_and_merge_filters(
+            embedding_query, filters
+        )
+        retrieve_k = top_k * 3 if date_range else top_k
+        chunks = self.retriever.retrieve(
+            embedding_query, top_k=retrieve_k, filters=merged_filters
+        )
+        chunks = filter_by_date_range(chunks, date_range)[:top_k]
         context = build_context(chunks)
         answer = await self.llm.chat(messages=messages, context=context)
         return {"answer": answer, "contexts": chunks}
@@ -69,7 +111,14 @@ class RAGPipeline:
         self, messages: list[dict], top_k: int = 8, filters: Optional[dict] = None
     ) -> AsyncGenerator[str, None]:
         embedding_query = self._build_embedding_query(messages)
-        chunks = self.retriever.retrieve(embedding_query, top_k=top_k, filters=filters)
+        merged_filters, date_range = self._rewrite_and_merge_filters(
+            embedding_query, filters
+        )
+        retrieve_k = top_k * 3 if date_range else top_k
+        chunks = self.retriever.retrieve(
+            embedding_query, top_k=retrieve_k, filters=merged_filters
+        )
+        chunks = filter_by_date_range(chunks, date_range)[:top_k]
         context = build_context(chunks)
         async for token in self.llm.chat_stream(messages=messages, context=context):
             yield token

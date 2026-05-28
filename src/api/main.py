@@ -14,6 +14,11 @@ from src.api.models import CollectionStats, HealthResponse
 from src.api.openai_compat import router as openai_router
 from src.api.routes_with_mlflow import router
 
+# Importer les métriques RAG partagées pour les enregistrer dans le registry global.
+# Sans cet import, /metrics peut ne pas exposer certains histogrammes/gauges
+# si le pipeline n'a pas encore été invoqué.
+import src.monitoring.prometheus_metrics  # noqa: F401
+
 log = structlog.get_logger()
 
 app = FastAPI(
@@ -35,19 +40,8 @@ log.info("[API] Routes avec MLflow tracking intégrées")
 
 # ─── Métriques Prometheus (best-effort) ────────────────────────────────────
 try:
-    from prometheus_client import (
-        Counter,
-        Histogram,
-        generate_latest,
-        CONTENT_TYPE_LATEST,
-    )
+    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
-    RAG_QUERY_TOTAL = Counter("rag_query_total", "Nombre total de requêtes /query")
-    RAG_QUERY_DURATION = Histogram("rag_query_duration_seconds", "Durée /query")
-    RAG_RETRIEVED_DOCS = Histogram(
-        "rag_retrieved_docs_count", "Nb docs récupérés par /query"
-    )
-    RAG_LLM_LATENCY = Histogram("rag_llm_latency_seconds", "Latence Gemma3")
     _PROM_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _PROM_AVAILABLE = False
@@ -119,6 +113,36 @@ async def health() -> HealthResponse:
         version=app.version,
         timestamp=datetime.now(timezone.utc).isoformat(),
     )
+
+
+@app.post("/admin/reload-model-version")
+async def reload_model_version() -> dict:
+    """Recharger la version du modèle depuis le Registry sans redémarrer l'API.
+
+    À appeler après une promotion (ex: à la fin du DAG `rag_evaluation_daily`).
+    """
+    from src.api.routes_with_mlflow import _get_pipeline
+
+    info = _get_pipeline().reload_model_version()
+    return {"reloaded": True, "current": info}
+
+
+@app.get("/model/version")
+async def model_version() -> dict:
+    """Retourner la version courante du modèle servi (depuis le Model Registry)."""
+    from src.monitoring.model_versioning import ModelVersionManager
+
+    s = get_settings()
+    mgr = ModelVersionManager(
+        tracking_uri=s.mlflow_tracking_uri, model_name="gemma3-rag-livraison"
+    )
+    prod = mgr.get_production_version()
+    if prod:
+        return {**prod, "serving_status": "production"}
+    staging = mgr.list_versions(stage="Staging")
+    if staging:
+        return {**staging[0], "serving_status": "staging_fallback"}
+    return {"serving_status": "unregistered", "model_name": "gemma3-rag-livraison"}
 
 
 @app.get("/collections/stats", response_model=CollectionStats)

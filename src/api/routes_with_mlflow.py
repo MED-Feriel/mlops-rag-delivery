@@ -8,9 +8,18 @@ Routes FastAPI avec tracking MLflow intégré:
 - POST /chat/stream → Chat streaming
 """
 
+import time
+
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from src.api.models import QueryRequest, QueryResponse
+from src.monitoring.prometheus_metrics import (
+    RAG_ACTIVE_REQUESTS,
+    RAG_LLM_LATENCY,
+    RAG_QUERY_DURATION,
+    RAG_QUERY_TOTAL,
+    extract_zone_filter,
+)
 from src.rag.rag_pipeline_with_mlflow import RAGPipelineWithMLflow
 from config.settings import get_settings
 import structlog
@@ -41,6 +50,11 @@ async def query(req: QueryRequest) -> QueryResponse:
     - Étapes: retrieve, context_build, generate
     - Métriques: latencies, chunk count, token count
     """
+    start_request = time.time()
+    RAG_ACTIVE_REQUESTS.inc()
+    zone = extract_zone_filter(req.filters)
+    status = "success"
+
     try:
         if not req.question:
             raise HTTPException(
@@ -56,7 +70,10 @@ async def query(req: QueryRequest) -> QueryResponse:
             run_name=f"api_query_{req.question[:20].replace(' ', '_')}",
         )
 
-        # Ajouter les métriques à la réponse
+        request_duration = time.time() - start_request
+        RAG_QUERY_DURATION.observe(request_duration)
+        RAG_QUERY_TOTAL.labels(status=status, zone_filter=zone).inc()
+
         response = QueryResponse(**result, question=req.question)
 
         log.info(
@@ -68,10 +85,16 @@ async def query(req: QueryRequest) -> QueryResponse:
         return response
 
     except HTTPException:
+        status = "error"
+        RAG_QUERY_TOTAL.labels(status=status, zone_filter=zone).inc()
         raise
     except Exception as e:
+        status = "error"
+        RAG_QUERY_TOTAL.labels(status=status, zone_filter=zone).inc()
         log.error(f"[API] Erreur query: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        RAG_ACTIVE_REQUESTS.dec()
 
 
 @router.post("/query/stream")
@@ -116,6 +139,11 @@ async def chat(req: QueryRequest) -> QueryResponse:
     - Contexte conversationnel
     - Performances multi-tour
     """
+    start_request = time.time()
+    RAG_ACTIVE_REQUESTS.inc()
+    zone = extract_zone_filter(req.filters)
+    status = "success"
+
     try:
         # Convertir les ChatMessage Pydantic en dict
         messages = [
@@ -139,6 +167,10 @@ async def chat(req: QueryRequest) -> QueryResponse:
             **result, question=messages[-1]["content"] if messages else ""
         )
 
+        request_duration = time.time() - start_request
+        RAG_QUERY_DURATION.observe(request_duration)
+        RAG_QUERY_TOTAL.labels(status=status, zone_filter=zone).inc()
+
         log.info(
             "[API] Chat OK",
             chunks=result["metrics"]["chunks_retrieved"],
@@ -148,8 +180,12 @@ async def chat(req: QueryRequest) -> QueryResponse:
         return response
 
     except Exception as e:
+        status = "error"
+        RAG_QUERY_TOTAL.labels(status=status, zone_filter=zone).inc()
         log.error(f"[API] Erreur chat: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        RAG_ACTIVE_REQUESTS.dec()
 
 
 @router.post("/chat/stream")

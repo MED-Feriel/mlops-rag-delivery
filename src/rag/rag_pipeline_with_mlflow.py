@@ -15,10 +15,13 @@ from typing import AsyncGenerator, Optional, Dict, Any
 from datetime import datetime
 
 from src.embeddings.embedder import Embedder
+from src.monitoring.prometheus_metrics import RAG_LLM_LATENCY
 from src.vector_store.qdrant_client import QdrantVectorStore
 from src.retrieval.retrieval_service import RetrievalService
 from src.llm.llm_with_mlflow import LLMWithMLflow
 from src.rag.context_builder import build_context
+from src.rag.query_rewriter import filter_by_date_range, rewrite_query
+from src.monitoring.model_versioning import ModelVersionManager
 
 log = structlog.get_logger()
 
@@ -57,7 +60,81 @@ class RAGPipelineWithMLflow:
             experiment_name="rag_inference",
         )
 
+        # Model Registry — version courante du modèle servi
+        try:
+            self.version_manager = ModelVersionManager(
+                tracking_uri=settings.mlflow_tracking_uri,
+                model_name="gemma3-rag-livraison",
+            )
+            self._model_version_info = self.version_manager.get_production_version()
+            if self._model_version_info:
+                log.info(
+                    "[RAG-MLflow] Modèle Production chargé",
+                    version=self._model_version_info.get("version"),
+                    semver=self._model_version_info.get("semver"),
+                )
+            else:
+                log.warning(
+                    "[RAG-MLflow] Aucun modèle en Production — fallback sur la dernière Staging"
+                )
+                staging = self.version_manager.list_versions(stage="Staging")
+                self._model_version_info = staging[0] if staging else None
+        except Exception as e:
+            log.error(f"[RAG-MLflow] Init ModelVersionManager échoué: {e}")
+            self.version_manager = None
+            self._model_version_info = None
+
         log.info("[RAG-MLflow] Pipeline initialisé")
+
+    def reload_model_version(self) -> Optional[Dict[str, Any]]:
+        """Recharger la version Production depuis le Registry (post-promotion)."""
+        if not self.version_manager:
+            return None
+        info = self.version_manager.get_production_version()
+        if not info:
+            staging = self.version_manager.list_versions(stage="Staging")
+            info = staging[0] if staging else None
+        self._model_version_info = info
+        log.info("[RAG-MLflow] Version modèle rechargée", info=info)
+        return info
+
+    def _log_model_version_tags(self) -> None:
+        """Logger les tags/params identifiant la version du modèle servie."""
+        info = self._model_version_info
+        if not info:
+            mlflow.set_tag("model_registry_status", "unregistered")
+            return
+        mlflow.set_tags(
+            {
+                "model_registry_name": "gemma3-rag-livraison",
+                "model_registry_version": str(info.get("version")),
+                "model_registry_stage": str(info.get("stage")),
+                "model_semver": str(info.get("semver") or "n/a"),
+            }
+        )
+        mlflow.log_params(
+            {
+                "model_version": info.get("version"),
+                "model_semver": info.get("semver") or "n/a",
+                "model_stage": info.get("stage"),
+            }
+        )
+
+    def _rewrite_and_merge_filters(
+        self, question: str, user_filters: Optional[dict]
+    ) -> tuple[Optional[dict], Optional[tuple]]:
+        """Extrait les filtres d'intent (criticite/zone/type_event/source/date)
+        depuis la question. Les filtres utilisateur explicites sont prioritaires
+        sur ceux dérivés (ne pas écraser un choix conscient de l'appelant).
+        """
+        rewritten = rewrite_query(question)
+        derived = rewritten.get("qdrant_filters") or {}
+        merged = (
+            {**derived, **(user_filters or {})} if (derived or user_filters) else None
+        )
+        if rewritten.get("matched"):
+            log.info("[RAG-MLflow] query_rewriter", **rewritten["matched"])
+        return merged, rewritten.get("date_range")
 
     async def query(
         self,
@@ -83,14 +160,22 @@ class RAGPipelineWithMLflow:
 
         with mlflow.start_run(run_name=run_name) as run:
             try:
+                self._log_model_version_tags()
                 # Logger les paramètres d'entrée
                 mlflow.log_params(
                     {"question": question[:100], "top_k": top_k, "method": "query"}
                 )
 
-                # ÉTAPE 1: RETRIEVE
+                # ÉTAPE 1: RETRIEVE (query rewriter → filtres dérivés + date)
+                merged_filters, date_range = self._rewrite_and_merge_filters(
+                    question, filters
+                )
                 start_retrieve = time.time()
-                chunks = self.retriever.retrieve(question, top_k=top_k, filters=filters)
+                retrieve_k = top_k * 3 if date_range else top_k
+                chunks = self.retriever.retrieve(
+                    question, top_k=retrieve_k, filters=merged_filters
+                )
+                chunks = filter_by_date_range(chunks, date_range)[:top_k]
                 retrieve_time = (time.time() - start_retrieve) * 1000  # ms
 
                 mlflow.log_metrics(
@@ -135,6 +220,7 @@ class RAGPipelineWithMLflow:
 
                 answer = result["response"]
                 llm_latency = result["latency_ms"]
+                RAG_LLM_LATENCY.observe(llm_latency / 1000.0)
 
                 mlflow.log_metrics(
                     {
@@ -205,14 +291,22 @@ class RAGPipelineWithMLflow:
 
         with mlflow.start_run(run_name=run_name):
             try:
+                self._log_model_version_tags()
                 # Logger les paramètres
                 mlflow.log_params(
                     {"question": question[:100], "top_k": top_k, "method": "stream"}
                 )
 
-                # RETRIEVE
+                # RETRIEVE (query rewriter)
+                merged_filters, date_range = self._rewrite_and_merge_filters(
+                    question, filters
+                )
                 start = time.time()
-                chunks = self.retriever.retrieve(question, top_k=top_k, filters=filters)
+                retrieve_k = top_k * 3 if date_range else top_k
+                chunks = self.retriever.retrieve(
+                    question, top_k=retrieve_k, filters=merged_filters
+                )
+                chunks = filter_by_date_range(chunks, date_range)[:top_k]
                 retrieve_time = (time.time() - start) * 1000
 
                 # BUILD CONTEXT
@@ -281,6 +375,7 @@ class RAGPipelineWithMLflow:
 
         with mlflow.start_run(run_name=run_name):
             try:
+                self._log_model_version_tags()
                 # Logger les paramètres
                 mlflow.log_params(
                     {"messages_count": len(messages), "top_k": top_k, "method": "chat"}
@@ -289,11 +384,16 @@ class RAGPipelineWithMLflow:
                 # BUILD EMBEDDING QUERY (pour retrieve avec contexte)
                 embedding_query = self._build_embedding_query(messages)
 
-                # RETRIEVE
-                start_retrieve = time.time()
-                chunks = self.retriever.retrieve(
-                    embedding_query, top_k=top_k, filters=filters
+                # RETRIEVE (query rewriter sur l'embedding_query)
+                merged_filters, date_range = self._rewrite_and_merge_filters(
+                    embedding_query, filters
                 )
+                start_retrieve = time.time()
+                retrieve_k = top_k * 3 if date_range else top_k
+                chunks = self.retriever.retrieve(
+                    embedding_query, top_k=retrieve_k, filters=merged_filters
+                )
+                chunks = filter_by_date_range(chunks, date_range)[:top_k]
                 retrieve_time = (time.time() - start_retrieve) * 1000
 
                 # BUILD CONTEXT
@@ -362,6 +462,7 @@ class RAGPipelineWithMLflow:
 
         with mlflow.start_run(run_name=run_name):
             try:
+                self._log_model_version_tags()
                 mlflow.log_params(
                     {
                         "messages_count": len(messages),
@@ -370,11 +471,16 @@ class RAGPipelineWithMLflow:
                     }
                 )
 
-                # RETRIEVE
+                # RETRIEVE (query rewriter)
                 embedding_query = self._build_embedding_query(messages)
-                chunks = self.retriever.retrieve(
-                    embedding_query, top_k=top_k, filters=filters
+                merged_filters, date_range = self._rewrite_and_merge_filters(
+                    embedding_query, filters
                 )
+                retrieve_k = top_k * 3 if date_range else top_k
+                chunks = self.retriever.retrieve(
+                    embedding_query, top_k=retrieve_k, filters=merged_filters
+                )
+                chunks = filter_by_date_range(chunks, date_range)[:top_k]
                 context = build_context(chunks)
 
                 mlflow.log_metrics(

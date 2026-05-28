@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
 from src.embeddings.embedder import Embedder
+from src.monitoring.prometheus_metrics import (
+    RAG_CONTEXT_SCORE_AVG,
+    RAG_EMBEDDING_DURATION,
+    RAG_RETRIEVED_DOCS,
+)
 from src.vector_store.qdrant_client import QdrantVectorStore
 
 SCORE_THRESHOLD = 0.20
@@ -25,9 +31,24 @@ class RetrievalService:
     ) -> list[dict]:
         """Recherche Qdrant avec seuil de score 0.30 (déjà appliqué côté store)."""
         k = top_k or self.default_top_k
+
+        start_embedding = time.time()
         query_vector = self.embedder.embed_query(question)
+        RAG_EMBEDDING_DURATION.observe(time.time() - start_embedding)
+
         results = self.vector_store.search(query_vector, top_k=k, filters=filters)
-        return [r for r in results if r.get("score", 0.0) >= SCORE_THRESHOLD]
+        filtered = [r for r in results if r.get("score", 0.0) >= SCORE_THRESHOLD]
+
+        average_score = (
+            sum(r.get("score", 0.0) for r in filtered) / len(filtered)
+            if filtered
+            else 0.0
+        )
+
+        RAG_RETRIEVED_DOCS.observe(len(filtered))
+        RAG_CONTEXT_SCORE_AVG.set(average_score)
+
+        return filtered
 
     def retrieve_with_reranking(
         self,

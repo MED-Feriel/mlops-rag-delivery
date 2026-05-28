@@ -1,0 +1,29 @@
+groups:
+  - name: rag-alerts
+    rules:
+      - alert: HighLLMLatency
+        expr: histogram_quantile(0.95, rate(rag_llm_latency_seconds_bucket[5m])) > 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Latence Gemma3 p95 > 10s depuis 2 minutes"
+          description: "Le pipeline RAG présente une latence LLM élevée sur les 5 dernières minutes."
+
+      - alert: HighErrorRate
+        expr: rate(rag_query_total{status="error"}[5m]) / rate(rag_query_total[5m]) > 0.05
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Taux erreur RAG > 5%"
+          description: "Plus de 5% des requêtes RAG retournent un statut error sur les 5 dernières minutes."
+
+      - alert: LowContextScore
+        expr: rag_context_score_avg < 0.25
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Score contexte Qdrant < 0.25 — qualité retrieval dégradée"
+          description: "Le score moyen des documents récupérés est trop faible, la qualité du contexte peut être mauvaise."

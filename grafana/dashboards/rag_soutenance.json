@@ -1,0 +1,272 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "rag_soutenance",
+    "title": "RAG Livraison — Soutenance PFE",
+    "description": "Dashboard complet du système RAG MLOps pour la supervision de la plateforme de livraison",
+    "tags": ["rag", "mlops", "pfe", "soutenance"],
+    "timezone": "browser",
+    "schemaVersion": 38,
+    "version": 1,
+    "refresh": "10s",
+    "time": {"from": "now-1h", "to": "now"},
+    "timepicker": {"refresh_intervals": ["5s", "10s", "30s", "1m", "5m"]},
+    "templating": {"list": []},
+    "annotations": {"list": []},
+    "panels": [
+      {
+        "type": "row", "title": "Vue d'ensemble", "collapsed": false,
+        "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}, "id": 100, "panels": []
+      },
+      {
+        "id": 1, "type": "stat", "title": "Requêtes totales",
+        "description": "Nombre total de requêtes RAG traitées (success + error)",
+        "gridPos": {"h": 4, "w": 4, "x": 0, "y": 1},
+        "datasource": {"type": "prometheus", "uid": "dfmgn6l4qxtz4a"},
+        "targets": [{"expr": "sum(rag_query_total)", "refId": "A"}],
+        "fieldConfig": {"defaults": {"unit": "short", "decimals": 0, "color": {"mode": "fixed", "fixedColor": "blue"}}},
+        "options": {"colorMode": "value", "graphMode": "area", "textMode": "value"}
+      },
+      {
+        "id": 2, "type": "stat", "title": "Taux de succès",
+        "description": "Pourcentage de requêtes réussies (vert > 95%, orange 80-95%, rouge < 80%)",
+        "gridPos": {"h": 4, "w": 4, "x": 4, "y": 1},
+        "datasource": {"type": "prometheus", "uid": "dfmgn6l4qxtz4a"},
+        "targets": [{"expr": "sum(rag_query_total{status=\"success\"}) / sum(rag_query_total) * 100", "refId": "A"}],
+        "fieldConfig": {"defaults": {"unit": "percent", "decimals": 1, "min": 0, "max": 100,
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "red", "value": null},
+            {"color": "orange", "value": 80},
+            {"color": "green", "value": 95}
+          ]}
+        }},
+        "options": {"colorMode": "background", "graphMode": "none", "textMode": "value"}
+      },
+      {
+        "id": 3, "type": "stat", "title": "Latence p95 (RAG total)",
+        "description": "p95 de la durée totale d'une requête RAG sur 5min",
+        "gridPos": {"h": 4, "w": 4, "x": 8, "y": 1},
+        "datasource": {"type": "prometheus", "uid": "dfmgn6l4qxtz4a"},
+        "targets": [{"expr": "histogram_quantile(0.95, sum(rate(rag_query_duration_seconds_bucket[5m])) by (le))", "refId": "A"}],
+        "fieldConfig": {"defaults": {"unit": "s", "decimals": 2,
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "green", "value": null},
+            {"color": "orange", "value": 5},
+            {"color": "red", "value": 10}
+          ]}
+        }},
+        "options": {"colorMode": "background", "graphMode": "area", "textMode": "value"}
+      },
+      {
+        "id": 4, "type": "stat", "title": "Vecteurs Qdrant",
+        "description": "Nombre de points indexés dans la collection 'logs'",
+        "gridPos": {"h": 4, "w": 4, "x": 12, "y": 1},
+        "datasource": {"type": "prometheus", "uid": "dfmgn6l4qxtz4a"},
+        "targets": [{"expr": "collection_points", "refId": "A"}],
+        "fieldConfig": {"defaults": {"unit": "short", "decimals": 0, "color": {"mode": "fixed", "fixedColor": "purple"}}},
+        "options": {"colorMode": "value", "graphMode": "none", "textMode": "value"}
+      },
+      {
+        "id": 5, "type": "stat", "title": "Modèle LLM",
+        "description": "Gemma3:1b — Q4_K_M, 815 MB, servi par Ollama",
+        "gridPos": {"h": 4, "w": 4, "x": 16, "y": 1},
+        "datasource": {"type": "prometheus", "uid": "dfmgn6l4qxtz4a"},
+        "targets": [{"expr": "vector(1)", "refId": "A"}],
+        "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"1": {"text": "Gemma3:1b", "color": "blue"}}}]}},
+        "options": {"colorMode": "value", "graphMode": "none", "textMode": "value"}
+      },
+      {
+        "id": 6, "type": "stat", "title": "Uptime API",
+        "description": "Statut du scrape Prometheus sur l'API RAG",
+        "gridPos": {"h": 4, "w": 4, "x": 20, "y": 1},
+        "datasource": {"type": "prometheus", "uid": "dfmgn6l4qxtz4a"},
+        "targets": [{"expr": "up{job=\"rag-api\"}", "refId": "A"}],
+        "fieldConfig": {"defaults": {"mappings": [
+          {"type": "value", "options": {"1": {"text": "En ligne", "color": "green"}, "0": {"text": "Hors ligne", "color": "red"}}}
+        ]}},
+        "options": {"colorMode": "background", "graphMode": "none", "textMode": "value"}
+      },
+
+      {
+        "type": "row", "title": "Latences détaillées", "collapsed": false,
+        "gridPos": {"h": 1, "w": 24, "x": 0, "y": 5}, "id": 101, "panels": []
+      },
+      {
+        "id": 7, "type": "timeseries", "title": "Latence RAG totale (p50 / p95 / p99)",
+        "description": "Temps de bout en bout par requête. Seuil SLO à 10s.",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
+        "datasource": {"type": "prometheus", "uid": "dfmgn6l4qxtz4a"},
+        "targets": [
+          {"expr": "histogram_quantile(0.50, sum(rate(rag_query_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p50", "refId": "A"},
+          {"expr": "histogram_quantile(0.95, sum(rate(rag_query_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95", "refId": "B"},
+          {"expr": "histogram_quantile(0.99, sum(rate(rag_query_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p99", "refId": "C"}
+        ],
+        "fieldConfig": {"defaults": {"unit": "s", "decimals": 2,
+          "custom": {"fillOpacity": 10, "lineWidth": 2, "drawStyle": "line"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "transparent", "value": null}, {"color": "red", "value": 10}]}
+        }},
+        "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["last", "max"]}, "tooltip": {"mode": "multi"}}
+      },
+      {
+        "id": 8, "type": "timeseries", "title": "Latence LLM Gemma3 (p50 / p95)",
+        "description": "Latence de la génération LLM seule. Timeout Ollama à 30s.",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
+        "datasource": {"type": "prometheus", "uid": "dfmgn6l4qxtz4a"},
+        "targets": [
+          {"expr": "histogram_quantile(0.50, sum(rate(rag_llm_latency_seconds_bucket[5m])) by (le))", "legendFormat": "p50 LLM", "refId": "A"},
+          {"expr": "histogram_quantile(0.95, sum(rate(rag_llm_latency_seconds_bucket[5m])) by (le))", "legendFormat": "p95 LLM", "refId": "B"}
+        ],
+        "fieldConfig": {"defaults": {"unit": "s", "decimals": 2,
+          "color": {"mode": "palette-classic"},
+          "custom": {"fillOpacity": 15, "lineWidth": 2, "drawStyle": "line"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "transparent", "value": null}, {"color": "red", "value": 30}]}
+        }},
+        "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["last", "max"]}, "tooltip": {"mode": "multi"}}
+      },
+
+      {
+        "type": "row", "title": "Retrieval & qualité", "collapsed": false,
+        "gridPos": {"h": 1, "w": 24, "x": 0, "y": 14}, "id": 102, "panels": []
+      },
+      {
+        "id": 9, "type": "gauge", "title": "Score contexte moyen",
+        "description": "Score de similarité moyen des docs récupérés par Qdrant. Bas = retrieval peu pertinent.",
+        "gridPos": {"h": 6, "w": 6, "x": 0, "y": 15},
+        "datasource": {"type": "prometheus", "uid": "dfmgn6l4qxtz4a"},
+        "targets": [{"expr": "rag_context_score_avg", "refId": "A"}],
+        "fieldConfig": {"defaults": {"min": 0, "max": 1, "decimals": 3,
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "red", "value": null},
+            {"color": "orange", "value": 0.3},
+            {"color": "green", "value": 0.6}
+          ]}
+        }},
+        "options": {"showThresholdLabels": true, "showThresholdMarkers": true}
+      },
+      {
+        "id": 10, "type": "heatmap", "title": "Distribution nb docs récupérés",
+        "description": "Histogramme du nombre de documents retournés par Qdrant (top_k effectif)",
+        "gridPos": {"h": 6, "w": 12, "x": 6, "y": 15},
+        "datasource": {"type": "prometheus", "uid": "dfmgn6l4qxtz4a"},
+        "targets": [{"expr": "sum(rate(rag_retrieved_docs_count_bucket[5m])) by (le)", "format": "heatmap", "refId": "A"}],
+        "fieldConfig": {"defaults": {"unit": "short"}},
+        "options": {"calculate": false, "yAxis": {"axisLabel": "docs", "unit": "short"}}
+      },
+      {
+        "id": 11, "type": "stat", "title": "Latence embedding p50",
+        "description": "Temps médian pour calculer l'embedding de la question",
+        "gridPos": {"h": 6, "w": 6, "x": 18, "y": 15},
+        "datasource": {"type": "prometheus", "uid": "dfmgn6l4qxtz4a"},
+        "targets": [{"expr": "histogram_quantile(0.50, sum(rate(rag_embedding_duration_seconds_bucket[5m])) by (le))", "refId": "A"}],
+        "fieldConfig": {"defaults": {"unit": "s", "decimals": 3, "color": {"mode": "fixed", "fixedColor": "rgb(0,200,180)"}}},
+        "options": {"colorMode": "value", "graphMode": "area", "textMode": "value"}
+      },
+      {
+        "id": 12, "type": "table", "title": "Requêtes par zone",
+        "description": "Décompte de requêtes groupé par filtre zone (label zone_filter)",
+        "gridPos": {"h": 6, "w": 12, "x": 0, "y": 21},
+        "datasource": {"type": "prometheus", "uid": "dfmgn6l4qxtz4a"},
+        "targets": [{"expr": "sum by (zone_filter, status) (rag_query_total)", "format": "table", "instant": true, "refId": "A"}],
+        "transformations": [
+          {"id": "organize", "options": {"excludeByName": {"Time": true, "__name__": true, "job": true, "instance": true},
+            "renameByName": {"zone_filter": "Zone", "status": "Statut", "Value": "Nb requêtes"}}}
+        ],
+        "fieldConfig": {"defaults": {"custom": {"align": "left"}}}
+      },
+
+      {
+        "type": "row", "title": "Volume & distribution", "collapsed": false,
+        "gridPos": {"h": 1, "w": 24, "x": 0, "y": 27}, "id": 103, "panels": []
+      },
+      {
+        "id": 13, "type": "timeseries", "title": "Requêtes par minute",
+        "description": "Débit en requêtes/minute (toutes statuts confondus)",
+        "gridPos": {"h": 6, "w": 12, "x": 0, "y": 28},
+        "datasource": {"type": "prometheus", "uid": "dfmgn6l4qxtz4a"},
+        "targets": [{"expr": "sum(rate(rag_query_total[1m])) * 60", "legendFormat": "req/min", "refId": "A"}],
+        "fieldConfig": {"defaults": {"unit": "short", "decimals": 1,
+          "color": {"mode": "fixed", "fixedColor": "blue"},
+          "custom": {"fillOpacity": 20, "lineWidth": 2, "drawStyle": "line"}
+        }},
+        "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}
+      },
+      {
+        "id": 14, "type": "piechart", "title": "Répartition succès / erreur",
+        "description": "Part de requêtes réussies vs en erreur",
+        "gridPos": {"h": 6, "w": 6, "x": 12, "y": 28},
+        "datasource": {"type": "prometheus", "uid": "dfmgn6l4qxtz4a"},
+        "targets": [
+          {"expr": "sum(rag_query_total{status=\"success\"})", "legendFormat": "Succès", "refId": "A"},
+          {"expr": "sum(rag_query_total{status=\"error\"})", "legendFormat": "Erreur", "refId": "B"}
+        ],
+        "fieldConfig": {"defaults": {"unit": "short", "decimals": 0,
+          "mappings": [], "color": {"mode": "palette-classic"}}, "overrides": [
+          {"matcher": {"id": "byName", "options": "Succès"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "green"}}]},
+          {"matcher": {"id": "byName", "options": "Erreur"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "red"}}]}
+        ]},
+        "options": {"pieType": "donut", "legend": {"displayMode": "list", "placement": "right", "values": ["value", "percent"]}, "displayLabels": ["percent"]}
+      },
+      {
+        "id": 15, "type": "gauge", "title": "Requêtes actives",
+        "description": "Nombre de requêtes RAG en cours de traitement",
+        "gridPos": {"h": 6, "w": 6, "x": 18, "y": 28},
+        "datasource": {"type": "prometheus", "uid": "dfmgn6l4qxtz4a"},
+        "targets": [{"expr": "rag_active_requests", "refId": "A"}],
+        "fieldConfig": {"defaults": {"min": 0, "max": 20, "decimals": 0, "unit": "short",
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "green", "value": null},
+            {"color": "orange", "value": 5},
+            {"color": "red", "value": 10}
+          ]}
+        }},
+        "options": {"showThresholdLabels": false, "showThresholdMarkers": true}
+      },
+
+      {
+        "type": "row", "title": "SLOs & alertes", "collapsed": false,
+        "gridPos": {"h": 1, "w": 24, "x": 0, "y": 34}, "id": 104, "panels": []
+      },
+      {
+        "id": 16, "type": "stat", "title": "SLO : latence p95 < 10s",
+        "description": "État du SLO de latence RAG. Respecté si p95 < 10s.",
+        "gridPos": {"h": 4, "w": 8, "x": 0, "y": 35},
+        "datasource": {"type": "prometheus", "uid": "dfmgn6l4qxtz4a"},
+        "targets": [{"expr": "(histogram_quantile(0.95, sum(rate(rag_query_duration_seconds_bucket[5m])) by (le)) < bool 10)", "refId": "A"}],
+        "fieldConfig": {"defaults": {"mappings": [
+          {"type": "value", "options": {"1": {"text": "Respecté ✓", "color": "green"}, "0": {"text": "Violation !", "color": "red"}}}
+        ]}},
+        "options": {"colorMode": "background", "graphMode": "none", "textMode": "value"}
+      },
+      {
+        "id": 17, "type": "stat", "title": "SLO : taux d'erreur < 5%",
+        "description": "État du SLO de fiabilité. Respecté si erreurs < 5% sur 5min.",
+        "gridPos": {"h": 4, "w": 8, "x": 8, "y": 35},
+        "datasource": {"type": "prometheus", "uid": "dfmgn6l4qxtz4a"},
+        "targets": [{"expr": "(sum(rate(rag_query_total{status=\"error\"}[5m])) / sum(rate(rag_query_total[5m]))) < bool 0.05", "refId": "A"}],
+        "fieldConfig": {"defaults": {"mappings": [
+          {"type": "value", "options": {"1": {"text": "Respecté ✓", "color": "green"}, "0": {"text": "Violation !", "color": "red"}}}
+        ]}},
+        "options": {"colorMode": "background", "graphMode": "none", "textMode": "value"}
+      },
+      {
+        "id": 18, "type": "table", "title": "Santé des services",
+        "description": "État de chaque scrape Prometheus",
+        "gridPos": {"h": 4, "w": 8, "x": 16, "y": 35},
+        "datasource": {"type": "prometheus", "uid": "dfmgn6l4qxtz4a"},
+        "targets": [{"expr": "up", "format": "table", "instant": true, "refId": "A"}],
+        "transformations": [
+          {"id": "organize", "options": {"excludeByName": {"Time": true, "__name__": true},
+            "renameByName": {"job": "Service", "instance": "Instance", "Value": "État"}}}
+        ],
+        "fieldConfig": {"defaults": {"custom": {"align": "left"},
+          "mappings": [
+            {"type": "value", "options": {"1": {"text": "En ligne", "color": "green"}, "0": {"text": "Hors ligne", "color": "red"}}}
+          ]
+        }, "overrides": [
+          {"matcher": {"id": "byName", "options": "État"}, "properties": [{"id": "custom.cellOptions", "value": {"type": "color-background"}}]}
+        ]}
+      }
+    ]
+  },
+  "overwrite": true
+}

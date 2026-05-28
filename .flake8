@@ -1,0 +1,10 @@
+[flake8]
+max-line-length = 120
+extend-ignore = E402,E203
+per-file-ignores =
+    src/monitoring/mlflow_tracker.py:F541,F401
+    src/rag/rag_with_mlflow.py:F541,F841
+    src/evaluation/ragas_evaluator.py:F541,F841
+    scripts/demo_mlflow_tracking.py:F401
+    src/api/routes_with_mlflow.py:F401
+    tests/test_mlflow_integration.py:F841

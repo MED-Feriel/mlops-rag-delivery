@@ -1,0 +1,132 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "model_performance",
+    "title": "Model Performance",
+    "tags": ["rag", "monitoring", "performance"],
+    "timezone": "browser",
+    "schemaVersion": 37,
+    "version": 1,
+    "refresh": "10s",
+    "panels": [
+      {
+        "type": "timeseries",
+        "title": "Latence LLM p95",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(rag_llm_latency_seconds_bucket[5m])) by (le))",
+            "legendFormat": "p95 latency",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "decimals": 3
+          }
+        }
+      },
+      {
+        "type": "stat",
+        "title": "Latence embedding p50",
+        "gridPos": {"h": 6, "w": 6, "x": 12, "y": 0},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, sum(rate(rag_embedding_duration_seconds_bucket[5m])) by (le))",
+            "legendFormat": "p50 embedding",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "s",
+            "decimals": 3
+          }
+        }
+      },
+      {
+        "type": "heatmap",
+        "title": "Distribution nb docs récupérés",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "targets": [
+          {
+            "expr": "sum(rate(rag_retrieved_docs_count_bucket[5m])) by (le)",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short"
+          }
+        }
+      },
+      {
+        "type": "gauge",
+        "title": "Score contexte moyen",
+        "gridPos": {"h": 6, "w": 6, "x": 12, "y": 8},
+        "targets": [
+          {
+            "expr": "rag_context_score_avg",
+            "legendFormat": "score moyen",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "min": 0,
+            "max": 1,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "orange", "value": 0.3},
+                {"color": "green", "value": 0.6}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "type": "piechart",
+        "title": "Requêtes par statut",
+        "gridPos": {"h": 6, "w": 6, "x": 0, "y": 16},
+        "targets": [
+          {
+            "expr": "sum(increase(rag_query_total[5m])) by (status)",
+            "legendFormat": "{{status}}",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "legend": {"displayMode": "list"}
+        }
+      },
+      {
+        "type": "stat",
+        "title": "Requêtes actives",
+        "gridPos": {"h": 6, "w": 6, "x": 6, "y": 16},
+        "targets": [
+          {
+            "expr": "rag_active_requests",
+            "legendFormat": "active requests",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "decimals": 0
+          }
+        }
+      }
+    ],
+    "annotations": {
+      "list": []
+    },
+    "templating": {"list": []},
+    "time": {"from": "now-1h", "to": "now"},
+    "timepicker": {"refresh_intervals": ["10s", "30s", "1m", "5m", "15m"]}
+  },
+  "overwrite": true
+}

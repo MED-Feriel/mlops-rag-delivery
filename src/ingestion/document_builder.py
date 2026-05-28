@@ -59,6 +59,39 @@ def doc_commande(row: dict) -> tuple[str, str, dict]:
     return f"commande-{row['id']}", text, meta
 
 
+def doc_avis(row: dict) -> tuple[str, str, dict]:
+    """Avis client : commentaire en langage naturel + contexte commande."""
+    retard = None
+    if row.get("delai_reel_min") and row.get("delai_estime_min"):
+        retard = row["delai_reel_min"] - row["delai_estime_min"]
+    retard_str = (
+        f"retard {retard} min"
+        if retard and retard > 0
+        else "à l'heure" if retard is not None else "délai inconnu"
+    )
+    text = (
+        f"Avis client — note {row['note']}/5 ({row['sentiment']}) — "
+        f"commande #{row['commande_id']} ({row['statut']}) — "
+        f"restaurant '{row['restaurant_nom']}', zone {row['zone_nom']}, "
+        f"livreur {row['livreur_nom']}, {retard_str}.\n"
+        f"Commentaire : {row['commentaire']}"
+    )
+    criticite = (
+        "haute"
+        if row["sentiment"] == "négatif"
+        else "moyenne" if row["sentiment"] == "neutre" else "basse"
+    )
+    meta = {
+        "source": "avis_clients",
+        "topic": "avis_client",
+        "type_event": row["sentiment"],
+        "criticite": criticite,
+        "zone": row["zone_nom"],
+        "note": int(row["note"]),
+    }
+    return f"avis-{row['id']}", text, meta
+
+
 def doc_restaurant(row: dict) -> tuple[str, str, dict]:
     n = row["nb_commandes_30j"] or 0
     taux_ann = (row["nb_annulees"] / n) if n else 0.0
@@ -314,6 +347,7 @@ def build_documents(
     # Documents par ligne
     per_row_builders = [
         ("incidents_actifs", doc_incident),
+        ("avis_clients", doc_avis),
         ("commandes", doc_commande),
         ("restaurants", doc_restaurant),
         ("zones", doc_zone),

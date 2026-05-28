@@ -31,8 +31,19 @@ JOIN commandes c ON c.id = i.commande_id
 JOIN zones z ON z.id = c.zone_id
 JOIN restaurants r ON r.id = c.restaurant_id
 JOIN livreurs l ON l.id = c.livreur_id
-WHERE i.resolu = FALSE
 ORDER BY i.created_at DESC
+"""
+
+SQL_AVIS_CLIENTS = """
+SELECT a.id, a.commande_id, a.note, a.commentaire, a.sentiment, a.created_at,
+       c.statut, c.delai_reel_min, c.delai_estime_min, c.montant,
+       z.nom AS zone_nom, r.nom AS restaurant_nom, l.nom AS livreur_nom
+FROM avis_clients a
+JOIN commandes c ON c.id = a.commande_id
+JOIN zones z ON z.id = c.zone_id
+JOIN restaurants r ON r.id = c.restaurant_id
+JOIN livreurs l ON l.id = c.livreur_id
+ORDER BY a.created_at DESC
 """
 
 SQL_COMMANDES_RECENTES_OU_EN_RETARD = """
@@ -227,6 +238,7 @@ async def extract_all() -> dict[str, list[dict]]:
             "incidents_actifs": [
                 dict(r) for r in await conn.fetch(SQL_INCIDENTS_ACTIFS)
             ],
+            "avis_clients": [dict(r) for r in await conn.fetch(SQL_AVIS_CLIENTS)],
             "commandes": [
                 dict(r) for r in await conn.fetch(SQL_COMMANDES_RECENTES_OU_EN_RETARD)
             ],

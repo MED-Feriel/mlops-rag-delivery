@@ -19,6 +19,7 @@ log = structlog.get_logger()
 
 REQUIRED_BY_SOURCE: dict[str, set[str]] = {
     "incidents_actifs": {"id", "type", "severite", "created_at", "commande_id"},
+    "avis_clients": {"id", "commande_id", "note", "commentaire", "sentiment"},
     "commandes": {"id", "statut", "created_at"},
     "restaurants": {"id", "nom"},
     "zones": {"id", "nom"},

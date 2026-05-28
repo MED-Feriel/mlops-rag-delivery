@@ -8,25 +8,21 @@ FLUX:
   questions → build_dataset → RAGAS evaluate → scores → MLflow
 """
 
-import json
-import os
-from datetime import datetime
-from pathlib import Path
-from typing import Dict, Optional
-
-import mlflow
-import pandas as pd
-import structlog
-from datasets import Dataset
-from langchain_community.chat_models import ChatOllama
-from langchain_community.embeddings import HuggingFaceEmbeddings
 from ragas import evaluate
 from ragas.metrics import (
+    faithfulness,
     answer_relevancy,
     context_precision,
     context_recall,
-    faithfulness,
 )
+from datasets import Dataset
+import mlflow
+import structlog
+import json
+import pandas as pd
+from typing import Optional, Dict
+from pathlib import Path
+from datetime import datetime
 
 log = structlog.get_logger()
 
@@ -79,9 +75,9 @@ class RAGASEvaluator:
                 data["ground_truth"].append(q.get("ground_truth", ""))
 
                 if (i + 1) % 5 == 0:
-                    log.info(f"[RAGAS] Progression: {i+1}/{len(questions)}")
+                    log.info("[RAGAS] Progression: {i+1}/{len(questions)}")
             except Exception as e:
-                log.error(f"[RAGAS] Erreur pour question {i}: {e}")
+                log.error("[RAGAS] Erreur pour question {i}: {e}")
                 continue
 
         log.info("[RAGAS] Dataset construit", nb_samples=len(data["question"]))
@@ -110,28 +106,9 @@ class RAGASEvaluator:
             # Construire le dataset
             dataset = await self.build_eval_dataset(questions)
 
-            # Évaluer avec juge local (Gemma3 via Ollama) + embeddings local
-            # Sans cela RAGAS tape sur OpenAI par défaut → AuthenticationError.
-            ollama_base = os.getenv(
-                "OLLAMA_BASE_URL", "http://host.docker.internal:11434"
-            )
-            judge_llm = ChatOllama(
-                model=os.getenv("RAGAS_JUDGE_MODEL", "gemma3:1b"),
-                base_url=ollama_base,
-                temperature=0.0,
-            )
-            local_embeddings = HuggingFaceEmbeddings(
-                model_name=os.getenv(
-                    "RAGAS_EMBED_MODEL", "paraphrase-multilingual-MiniLM-L12-v2"
-                ),
-            )
-            log.info("[RAGAS] Évaluation en cours (juge=gemma3:1b local)...")
-            results = evaluate(
-                dataset,
-                metrics=self.METRICS,
-                llm=judge_llm,
-                embeddings=local_embeddings,
-            )
+            # Évaluer
+            log.info("[RAGAS] Évaluation en cours...")
+            results = evaluate(dataset, metrics=self.METRICS)
 
             # Extraire les scores
             scores = {
@@ -165,7 +142,7 @@ class RAGASEvaluator:
             return scores
 
         except Exception as e:
-            log.error(f"[RAGAS] Erreur evaluate_and_log: {e}", exc_info=True)
+            log.error("[RAGAS] Erreur evaluate_and_log: {e}", exc_info=True)
             raise
 
     def _save_eval_artifacts(self, results, dataset, scores: Dict[str, float]) -> None:
@@ -210,7 +187,7 @@ class RAGASEvaluator:
             log.info("[RAGAS] Artifacts sauvegardés", artifact_dir=str(artifact_dir))
 
         except Exception as e:
-            log.warning(f"[RAGAS] Erreur save_artifacts (non-bloquant): {e}")
+            log.warning("[RAGAS] Erreur save_artifacts (non-bloquant): {e}")
 
     def compare_runs(
         self, metric: str = "faithfulness", top_n: int = 10
@@ -245,11 +222,11 @@ class RAGASEvaluator:
             comparison.columns = ["run_id", "timestamp", "status", metric]
 
             log.info(
-                "[RAGAS] Comparaison des runs", metric=metric, count=len(comparison)
+                f"[RAGAS] Comparaison des runs", metric=metric, count=len(comparison)
             )
 
             return comparison
 
         except Exception as e:
-            log.error(f"[RAGAS] Erreur compare_runs: {e}")
+            log.error("[RAGAS] Erreur compare_runs: {e}")
             return pd.DataFrame()

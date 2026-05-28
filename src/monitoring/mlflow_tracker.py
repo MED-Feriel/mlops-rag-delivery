@@ -70,7 +70,7 @@ class MLflowTracker:
             if tags:
                 mlflow.set_tags(tags)
 
-            log.info("[MLFLOW] Run démarrée", run_id=run_id, run_name=run_name)
+            log.info(f"[MLFLOW] Run démarrée", run_id=run_id, run_name=run_name)
             return run_id
         except Exception as e:
             log.error(f"[MLFLOW] Erreur start_run: {e}", exc_info=True)
@@ -87,7 +87,7 @@ class MLflowTracker:
             # Limiter la longueur des valeurs (MLflow limite à 500 chars)
             clean_params = {str(k): str(v)[:500] for k, v in params.items()}
             mlflow.log_params(clean_params)
-            log.info("[MLFLOW] Params loggés", count=len(clean_params))
+            log.info(f"[MLFLOW] Params loggés", count=len(clean_params))
         except Exception as e:
             log.error(f"[MLFLOW] Erreur log_params: {e}", exc_info=True)
 
@@ -101,7 +101,7 @@ class MLflowTracker:
         """
         try:
             mlflow.log_metrics(metrics, step=step)
-            log.info("[MLFLOW] Métriques loggées", count=len(metrics), step=step)
+            log.info(f"[MLFLOW] Métriques loggées", count=len(metrics), step=step)
         except Exception as e:
             log.error(f"[MLFLOW] Erreur log_metrics: {e}", exc_info=True)
 
@@ -118,7 +118,7 @@ class MLflowTracker:
         try:
             mlflow.log_artifact(local_path, artifact_path=artifact_path)
             log.info(
-                "[MLFLOW] Artefact loggé", path=local_path, artifact_path=artifact_path
+                f"[MLFLOW] Artefact loggé", path=local_path, artifact_path=artifact_path
             )
         except Exception as e:
             log.error(f"[MLFLOW] Erreur log_artifact: {e}", exc_info=True)
@@ -152,7 +152,7 @@ class MLflowTracker:
                     signature=signature,
                     input_example=input_example,
                 )
-            log.info("[MLFLOW] Modèle loggé", artifact_path=artifact_path)
+            log.info(f"[MLFLOW] Modèle loggé", artifact_path=artifact_path)
         except Exception as e:
             log.error(f"[MLFLOW] Erreur log_model: {e}", exc_info=True)
 
@@ -189,7 +189,7 @@ class MLflowTracker:
         """Terminer la run courante."""
         try:
             mlflow.end_run(status=status)
-            log.info("[MLFLOW] Run terminée", status=status)
+            log.info(f"[MLFLOW] Run terminée", status=status)
         except Exception as e:
             log.error(f"[MLFLOW] Erreur end_run: {e}", exc_info=True)
 
@@ -219,7 +219,7 @@ class MLflowTracker:
             )
 
             if runs.empty:
-                log.warning("[MLFLOW] Aucune run trouvée")
+                log.warning(f"[MLFLOW] Aucune run trouvée")
                 return pd.DataFrame()
 
             # Garder les top N
@@ -228,8 +228,8 @@ class MLflowTracker:
                     "run_id",
                     "start_time",
                     "status",
-                    "params.llm_model",
-                    "params.embedding_model",
+                    f"params.llm_model",
+                    f"params.embedding_model",
                     f"metrics.{metric_name}",
                 ]
             ].copy()
@@ -244,7 +244,7 @@ class MLflowTracker:
             ]
 
             log.info(
-                "[MLFLOW] Comparaison réalisée",
+                f"[MLFLOW] Comparaison réalisée",
                 metric=metric_name,
                 count=len(comparison_df),
             )
@@ -294,7 +294,7 @@ class MLflowTracker:
             }
 
             log.info(
-                "[MLFLOW] Meilleure run trouvée",
+                f"[MLFLOW] Meilleure run trouvée",
                 run_id=best_run["run_id"],
                 metric=metric_name,
             )
@@ -327,7 +327,7 @@ class MLflowTracker:
                 )
 
             log.info(
-                "[MLFLOW] Modèle enregistré",
+                f"[MLFLOW] Modèle enregistré",
                 model_name=model_name,
                 version=mv.version,
                 stage=stage,
@@ -358,7 +358,7 @@ class MLflowTracker:
                     }
                 )
             log.info(
-                "[MLFLOW] Versions récupérées",
+                f"[MLFLOW] Versions récupérées",
                 model_name=model_name,
                 count=len(result),
             )
@@ -396,4 +396,4 @@ class MLflowRun:
         status = "FAILED" if exc_type else "FINISHED"
         self.tracker.end_run(status=status)
         if exc_type:
-            log.error("[MLFLOW] Run échouée", exc_type=exc_type, exc_val=exc_val)
+            log.error(f"[MLFLOW] Run échouée", exc_type=exc_type, exc_val=exc_val)

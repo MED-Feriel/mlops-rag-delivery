@@ -6,14 +6,22 @@ import asyncio
 import os
 
 from fastapi import FastAPI
+from fastapi.responses import Response
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 try:
     from simulator.realtime_producer import produce_events_loop  # type: ignore
 except ImportError:
     from src.simulator.realtime_producer import produce_events_loop
 
-app = FastAPI(title="RAG Livraison Simulator", version="2.0.0")
-_state: dict = {"running": False, "events_produced": 0, "last_event": None}
+app = FastAPI(title="RAG Livraison Simulator", version="3.0.0")
+_state: dict = {
+    "running": False,
+    "events_produced": 0,
+    "commandes_simulees": 0,
+    "events_par_topic": {},
+    "last_event": None,
+}
 _task: asyncio.Task | None = None
 
 
@@ -63,3 +71,9 @@ async def reset() -> dict:
 @app.get("/health")
 async def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/metrics")
+async def metrics() -> Response:
+    """Endpoint Prometheus — exposé sur :8090/metrics, scrapé par Prometheus."""
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)

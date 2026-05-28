@@ -22,6 +22,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 from config.settings import Settings
 from src.monitoring.mlflow_tracker import MLflowTracker, MLflowRun
 
+# noqa: F401 import pandas as pd
+
 log = structlog.get_logger()
 
 

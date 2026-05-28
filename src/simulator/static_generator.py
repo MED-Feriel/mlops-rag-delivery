@@ -20,6 +20,7 @@ Usage :
 from __future__ import annotations
 
 import asyncio
+import math
 import os
 import random
 from datetime import datetime, timedelta
@@ -710,6 +711,81 @@ async def main() -> None:
         )
     finally:
         await conn.close()
+
+
+# ─── Public helpers (kept for unit-test compatibility post-v3 refactor) ──────
+
+
+def weighted_pick(items: list, weights: list[float]) -> int:
+    """Retourne l'index d'un item tiré selon les poids fournis."""
+    return int(np.random.choice(len(items), p=np.asarray(weights) / sum(weights)))
+
+
+def temporal_factor(ts: datetime, cfg: dict) -> float:
+    """Facteur multiplicatif horaire : pics 12h30 et 20h, weekend boost."""
+    h = ts.hour + ts.minute / 60.0
+    pic_dej = cfg["temporal"]["pic_dejeuner_heure"]
+    pic_din = cfg["temporal"]["pic_diner_heure"]
+    duree = cfg["temporal"]["pic_duree_heures"]
+    sigma = duree / 2.0
+    base = 0.15
+    f_dej = math.exp(-((h - pic_dej) ** 2) / (2 * sigma**2))
+    f_din = math.exp(-((h - pic_din) ** 2) / (2 * sigma**2))
+    factor = base + f_dej + f_din
+    if ts.weekday() >= 5:
+        factor *= cfg["temporal"]["facteur_weekend"]
+    return factor
+
+
+def sample_commande_timestamp(cfg: dict, jours_historique: int) -> datetime:
+    """Tire un timestamp dans les N derniers jours, biaisé par temporal_factor."""
+    while True:
+        days_ago = random.uniform(0, jours_historique)
+        ts = datetime.now() - timedelta(days=days_ago)
+        ts = ts.replace(microsecond=0)
+        accept_proba = temporal_factor(ts, cfg) / 2.5
+        if random.random() < accept_proba:
+            return ts
+
+
+def pick_statut(cfg: dict) -> str:
+    p = cfg["statuts"]
+    r = random.random()
+    if r < p["prob_livree"]:
+        return "livree"
+    if r < p["prob_livree"] + p["prob_annulee"]:
+        return "annulee"
+    return "echouee"
+
+
+def pick_methode_paiement(cfg: dict) -> str:
+    methods = list(cfg["paiements"]["methodes"].keys())
+    weights = list(cfg["paiements"]["methodes"].values())
+    return methods[weighted_pick(methods, weights)]
+
+
+def pick_severite(cfg: dict) -> str:
+    sev = list(cfg["incidents"]["severites"].keys())
+    w = list(cfg["incidents"]["severites"].values())
+    return sev[weighted_pick(sev, w)]
+
+
+def pick_type_incident(cfg: dict) -> str:
+    types = list(cfg["incidents"]["types"].keys())
+    w = list(cfg["incidents"]["types"].values())
+    return types[weighted_pick(types, w)]
+
+
+def description_incident(t: str, severite: str) -> str:
+    d = {
+        "retard": "Retard de livraison signalé par le client",
+        "restaurant_ferme": "Restaurant fermé sans préavis à l'arrivée du livreur",
+        "livreur_bloque": "Livreur bloqué (trafic, panne moto, conditions météo)",
+        "paiement_echoue": "Échec de paiement par carte",
+        "adresse_incorrecte": "Adresse de livraison incorrecte ou introuvable",
+        "probleme_qualite": "Plainte client sur la qualité du repas",
+    }
+    return f"[{severite.upper()}] {d.get(t, t)}"
 
 
 if __name__ == "__main__":

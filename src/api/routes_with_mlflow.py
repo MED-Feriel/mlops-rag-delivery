@@ -15,7 +15,6 @@ from fastapi.responses import StreamingResponse
 from src.api.models import QueryRequest, QueryResponse
 from src.monitoring.prometheus_metrics import (
     RAG_ACTIVE_REQUESTS,
-    RAG_LLM_LATENCY,
     RAG_QUERY_DURATION,
     RAG_QUERY_TOTAL,
     extract_zone_filter,

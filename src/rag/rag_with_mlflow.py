@@ -169,10 +169,10 @@ class RAGWithMLflow:
         summary += "=" * 80 + "\n"
         summary += f"Run ID: {best['run_id']}\n"
         summary += f"Status: {best['status']}\n"
-        summary += f"\nMétriques:\n"
+        summary += "\nMétriques:\n"
         for name, value in best["metrics"].items():
             summary += f"  - {name}: {value:.4f}\n"
-        summary += f"\nParamètres:\n"
+        summary += "\nParamètres:\n"
         for name, value in best["params"].items():
             summary += f"  - {name}: {value}\n"
 
@@ -204,7 +204,7 @@ async def example_usage():
     rag_mlflow = RAGWithMLflow(rag_pipeline, mlflow_tracker)
 
     # Exemple 1: Requête simple avec logging
-    result = await rag_mlflow.query_and_log(
+    await rag_mlflow.query_and_log(
         "Combien de commandes retardées en Algérie ?",
         tags={"user": "test", "source": "demo"},
     )
@@ -214,7 +214,7 @@ async def example_usage():
         {"question": "Quelle est la livraison la plus rapide ?", "ground_truth": "..."},
         {"question": "Combien d'incidents aujourd'hui ?", "ground_truth": "..."},
     ]
-    scores = await rag_mlflow.evaluate_and_log_batch(questions, evaluator)
+    await rag_mlflow.evaluate_and_log_batch(questions, evaluator)
 
     # Exemple 3: Comparaison d'expériences
     print(rag_mlflow.compare_experiments_summary("faithfulness"))

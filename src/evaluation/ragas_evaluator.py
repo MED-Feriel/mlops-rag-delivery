@@ -76,7 +76,7 @@ class RAGASEvaluator:
 
                 if (i + 1) % 5 == 0:
                     log.info("[RAGAS] Progression: {i+1}/{len(questions)}")
-            except Exception as e:
+            except Exception:
                 log.error("[RAGAS] Erreur pour question {i}: {e}")
                 continue
 
@@ -141,7 +141,7 @@ class RAGASEvaluator:
 
             return scores
 
-        except Exception as e:
+        except Exception:
             log.error("[RAGAS] Erreur evaluate_and_log: {e}", exc_info=True)
             raise
 
@@ -186,7 +186,7 @@ class RAGASEvaluator:
 
             log.info("[RAGAS] Artifacts sauvegardés", artifact_dir=str(artifact_dir))
 
-        except Exception as e:
+        except Exception:
             log.warning("[RAGAS] Erreur save_artifacts (non-bloquant): {e}")
 
     def compare_runs(
@@ -222,11 +222,11 @@ class RAGASEvaluator:
             comparison.columns = ["run_id", "timestamp", "status", metric]
 
             log.info(
-                f"[RAGAS] Comparaison des runs", metric=metric, count=len(comparison)
+                "[RAGAS] Comparaison des runs", metric=metric, count=len(comparison)
             )
 
             return comparison
 
-        except Exception as e:
+        except Exception:
             log.error("[RAGAS] Erreur compare_runs: {e}")
             return pd.DataFrame()

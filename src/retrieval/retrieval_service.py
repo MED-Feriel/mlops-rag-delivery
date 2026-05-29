@@ -11,6 +11,7 @@ from src.monitoring.prometheus_metrics import (
     RAG_CONTEXT_SCORE_AVG,
     RAG_EMBEDDING_DURATION,
     RAG_RETRIEVED_DOCS,
+    RAG_TOP1_SCORE,
 )
 from src.vector_store.qdrant_client import QdrantVectorStore
 
@@ -51,14 +52,15 @@ class RetrievalService:
         )
         filtered = [r for r in results if r.get("score", 0.0) >= threshold]
 
-        average_score = (
-            sum(r.get("score", 0.0) for r in filtered) / len(filtered)
-            if filtered
-            else 0.0
-        )
-
         RAG_RETRIEVED_DOCS.observe(len(filtered))
-        RAG_CONTEXT_SCORE_AVG.set(average_score)
+        # On ne met à jour le gauge du score de contexte QUE si la requête a
+        # ramené des documents. Sinon (requête sans résultat / guardrail), on
+        # garde la dernière valeur significative au lieu de la réécraser à 0.0
+        # — sans quoi le snapshot Prometheus lisait souvent rag_context_score=0.
+        if filtered:
+            average_score = sum(r.get("score", 0.0) for r in filtered) / len(filtered)
+            RAG_CONTEXT_SCORE_AVG.set(average_score)
+            RAG_TOP1_SCORE.observe(float(filtered[0].get("score", 0.0)))
 
         return filtered
 

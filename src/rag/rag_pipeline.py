@@ -7,6 +7,7 @@ import structlog
 from src.embeddings.embedder import Embedder
 from src.llm.llm_service import LLMService
 from src.rag.context_builder import build_context
+from src.rag.guardrails import check_context
 from src.rag.query_rewriter import filter_by_date_range, rewrite_query
 from src.retrieval.retrieval_service import RetrievalService
 from src.vector_store.qdrant_client import QdrantVectorStore
@@ -77,6 +78,9 @@ class RAGPipeline:
         )
         chunks = filter_by_date_range(chunks, date_range)[:top_k]
         context = build_context(chunks)
+        ok, refus = check_context(context)
+        if not ok:
+            return {"answer": refus, "contexts": chunks}
         answer = await self.llm.generate(context=context, question=question)
         return {"answer": answer, "contexts": chunks}
 
@@ -93,6 +97,10 @@ class RAGPipeline:
         )
         chunks = filter_by_date_range(chunks, date_range)[:top_k]
         context = build_context(chunks)
+        ok, refus = check_context(context)
+        if not ok:
+            yield refus
+            return
         async for token in self.llm.stream(context=context, question=question):
             yield token
 
@@ -124,6 +132,9 @@ class RAGPipeline:
         )
         chunks = filter_by_date_range(chunks, date_range)[:top_k]
         context = build_context(chunks)
+        ok, refus = check_context(context)
+        if not ok:
+            return {"answer": refus, "contexts": chunks}
         answer = await self.llm.chat(messages=messages, context=context)
         return {"answer": answer, "contexts": chunks}
 
@@ -143,5 +154,9 @@ class RAGPipeline:
         )
         chunks = filter_by_date_range(chunks, date_range)[:top_k]
         context = build_context(chunks)
+        ok, refus = check_context(context)
+        if not ok:
+            yield refus
+            return
         async for token in self.llm.chat_stream(messages=messages, context=context):
             yield token

@@ -20,6 +20,7 @@ from src.vector_store.qdrant_client import QdrantVectorStore
 from src.retrieval.retrieval_service import RetrievalService
 from src.llm.llm_with_mlflow import LLMWithMLflow
 from src.rag.context_builder import build_context
+from src.rag.guardrails import check_context
 from src.rag.query_rewriter import filter_by_date_range, rewrite_query
 from src.monitoring.model_versioning import ModelVersionManager
 
@@ -220,6 +221,24 @@ class RAGPipelineWithMLflow:
                     }
                 )
 
+                # GUARDRAIL : contexte vide → réponse de secours sans appel LLM
+                # (évite l'hallucination d'un petit modèle face à un contexte vide).
+                ok, refus = check_context(context)
+                if not ok:
+                    mlflow.set_tag("guardrail", "contexte_vide")
+                    log.info(
+                        "[RAG-MLflow] guardrail contexte_vide — réponse de secours"
+                    )
+                    return {
+                        "answer": refus,
+                        "contexts": chunks,
+                        "metrics": {
+                            "retrieve_time_ms": retrieve_time,
+                            "chunks_retrieved": len(chunks),
+                            "guardrail": "contexte_vide",
+                        },
+                    }
+
                 log.info(
                     "[RAG-MLflow] Context build OK",
                     time_ms=context_time,
@@ -338,6 +357,13 @@ class RAGPipelineWithMLflow:
                     }
                 )
 
+                # GUARDRAIL : contexte vide → secours sans appel LLM
+                ok, refus = check_context(context)
+                if not ok:
+                    mlflow.set_tag("guardrail", "contexte_vide")
+                    yield refus
+                    return
+
                 # STREAM GENERATE
                 token_count = 0
                 start_generate = time.time()
@@ -429,6 +455,20 @@ class RAGPipelineWithMLflow:
                     }
                 )
 
+                # GUARDRAIL : contexte vide → réponse de secours sans appel LLM
+                ok, refus = check_context(context)
+                if not ok:
+                    mlflow.set_tag("guardrail", "contexte_vide")
+                    return {
+                        "answer": refus,
+                        "contexts": chunks,
+                        "metrics": {
+                            "retrieve_time_ms": retrieve_time,
+                            "chunks_retrieved": len(chunks),
+                            "guardrail": "contexte_vide",
+                        },
+                    }
+
                 # GENERATE CHAT (passer create_run=False)
                 start_generate = time.time()
                 result = await self.llm.chat(messages, context, create_run=False)
@@ -514,6 +554,13 @@ class RAGPipelineWithMLflow:
                         "messages_count": len(messages),
                     }
                 )
+
+                # GUARDRAIL : contexte vide → secours sans appel LLM
+                ok, refus = check_context(context)
+                if not ok:
+                    mlflow.set_tag("guardrail", "contexte_vide")
+                    yield refus
+                    return
 
                 # STREAM CHAT
                 token_count = 0

@@ -56,8 +56,10 @@ class RAGPipeline:
     _REALTIME_SOURCES = {"prometheus", "elasticsearch"}
 
     def _threshold_for(self, filters: Optional[dict]) -> Optional[float]:
+        # Source temps réel filtrée : le filtre garantit la pertinence, le seuil
+        # de score pénaliserait à tort (ex: snapshot santé score ~0.02).
         if filters and filters.get("source") in self._REALTIME_SOURCES:
-            return 0.05
+            return 0.0
         return None
 
     async def query(

@@ -30,6 +30,11 @@ CREATE TABLE restaurants (
     type_cuisine VARCHAR(50),
     ouvert BOOLEAN DEFAULT TRUE,
     note_moyenne FLOAT,
+    categorie VARCHAR(30),
+    heure_ouverture SMALLINT DEFAULT 10,
+    heure_fermeture SMALLINT DEFAULT 23,
+    telephone VARCHAR(20),
+    delai_prep_moyen SMALLINT DEFAULT 15,
     created_at TIMESTAMP DEFAULT NOW()
 );
 
@@ -41,6 +46,9 @@ CREATE TABLE livreurs (
     statut VARCHAR(50) DEFAULT 'actif',
     note_moyenne FLOAT,
     telephone VARCHAR(40),
+    vehicule_type VARCHAR(10) CHECK (vehicule_type IN ('moto','voiture','velo')),
+    annee_experience SMALLINT DEFAULT 1,
+    note_ponctualite NUMERIC(2,1) DEFAULT 4.0,
     created_at TIMESTAMP DEFAULT NOW()
 );
 
@@ -69,6 +77,8 @@ CREATE TABLE commandes (
     delai_reel_min INTEGER,
     note_livreur FLOAT,
     commentaire TEXT,
+    canal_commande VARCHAR(15) CHECK (canal_commande IN ('app_mobile','web','telephone')),
+    delai_preparation_reel_min SMALLINT,
     created_at TIMESTAMP NOT NULL,
     livre_at TIMESTAMP
 );

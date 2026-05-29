@@ -59,38 +59,40 @@ PRENOMS_HOMMES = [
     "Slimane",
 ]
 
+
 PRENOMS_FEMMES = [
-    "Fatima",
     "Amina",
-    "Sara",
-    "Nour",
-    "Yasmine",
-    "Meriem",
+    "Fatima",
     "Khadija",
+    "Yasmine",
+    "Nadia",
     "Samira",
-    "Lina",
-    "Djamila",
-    "Houria",
-    "Nabila",
-    "Siham",
-    "Souad",
-    "Rania",
-    "Asma",
-    "Imane",
-    "Amel",
-    "Wafa",
-    "Farida",
-    "Karima",
-    "Zineb",
-    "Lamia",
-    "Hanane",
-    "Naima",
-    "Dalila",
     "Leila",
-    "Malika",
+    "Sara",
+    "Imene",
+    "Meriem",
+    "Soraya",
+    "Hayet",
+    "Wafa",
+    "Nesrine",
+    "Lamia",
+    "Asma",
+    "Dalila",
+    "Karima",
+    "Nawel",
+    "Souad",
+    "Rym",
+    "Hanane",
+    "Zineb",
+    "Lynda",
+    "Feriel",
+    "Manel",
+    "Chaima",
+    "Ines",
     "Sabrina",
-    "Aicha",
+    "Houda",
 ]
+
 
 NOMS_FAMILLE = [
     "Benmoussa",
@@ -217,6 +219,43 @@ _ADJECTIFS = [
     "Amir",
     "Firdaws",
 ]
+
+
+# ── Données enrichies livreurs / restaurants (v3.1) ──────────────
+VEHICULES = ["moto", "moto", "moto", "voiture", "velo"]
+# Distribution réaliste : 60% moto (plus rapide en ville)
+
+CATEGORIES_RESTAURANTS = [
+    "Fast Food",
+    "Pizza",
+    "Couscous",
+    "Sandwichs",
+    "Burgers",
+    "Grillades",
+    "Shawarma",
+    "Tacos",
+    "Sushi",
+    "Salades",
+    "Plats traditionnels",
+    "Pâtisserie",
+    "Poulet",
+    "Fruits de mer",
+    "Végétarien",
+]
+
+HORAIRES_RESTAURANTS = [
+    (10, 23),
+    (11, 22),
+    (9, 24),
+    (12, 22),
+    (8, 21),
+    (10, 22),
+    (11, 23),
+    (9, 22),
+    (10, 23),
+    (12, 24),
+]
+# (heure_ouverture, heure_fermeture)
 
 
 def random_nom_complet(genre: str = "homme") -> tuple[str, str]:

@@ -47,8 +47,9 @@ ORDER BY a.created_at DESC
 """
 
 SQL_COMMANDES_RECENTES_OU_EN_RETARD = """
-SELECT c.id, c.statut, c.montant, c.delai_estime_min, c.delai_reel_min,
+SELECT c.id, c.statut, c.montant, c.montant_total, c.delai_estime_min, c.delai_reel_min,
        c.note_livreur, c.commentaire, c.methode_paiement, c.created_at, c.livre_at,
+       c.canal_commande, c.delai_preparation_reel_min,
        z.nom AS zone_nom, r.nom AS restaurant_nom, l.nom AS livreur_nom,
        (COALESCE(c.delai_reel_min, 0) - c.delai_estime_min) AS retard_min
 FROM commandes c
@@ -63,6 +64,7 @@ LIMIT 500
 
 SQL_RESTAURANT_SNAPSHOTS = """
 SELECT r.id, r.nom, r.type_cuisine, r.note_moyenne, z.nom AS zone_nom,
+       r.categorie, r.heure_ouverture, r.heure_fermeture, r.delai_prep_moyen,
        COUNT(c.id) AS nb_commandes_30j,
        COUNT(*) FILTER (WHERE c.statut = 'annulee') AS nb_annulees,
        COUNT(*) FILTER (WHERE c.statut = 'echouee') AS nb_echouees,
@@ -73,7 +75,24 @@ JOIN zones z ON z.id = r.zone_id
 LEFT JOIN commandes c
        ON c.restaurant_id = r.id
       AND c.created_at > NOW() - INTERVAL '30 days'
-GROUP BY r.id, r.nom, r.type_cuisine, r.note_moyenne, z.nom
+GROUP BY r.id, r.nom, r.type_cuisine, r.note_moyenne, z.nom,
+         r.categorie, r.heure_ouverture, r.heure_fermeture, r.delai_prep_moyen
+"""
+
+SQL_LIVREUR_SNAPSHOTS = """
+SELECT l.id, l.prenom, l.nom, l.vehicule_type, l.annee_experience,
+       l.note_moyenne, l.note_ponctualite, l.statut, z.nom AS zone_nom,
+       COUNT(c.id) AS nb_commandes_30j,
+       COUNT(*) FILTER (WHERE c.statut = 'livree') AS nb_livraisons_reussies,
+       COUNT(*) FILTER (WHERE c.statut IN ('annulee','echouee')) AS nb_echecs,
+       AVG(GREATEST(c.delai_reel_min - c.delai_estime_min, 0)) AS retard_moyen
+FROM livreurs l
+JOIN zones z ON z.id = l.zone_principale_id
+LEFT JOIN commandes c
+       ON c.livreur_id = l.id
+      AND c.created_at > NOW() - INTERVAL '30 days'
+GROUP BY l.id, l.prenom, l.nom, l.vehicule_type, l.annee_experience,
+         l.note_moyenne, l.note_ponctualite, l.statut, z.nom
 """
 
 SQL_ZONE_SNAPSHOTS = """
@@ -245,6 +264,7 @@ async def extract_all() -> dict[str, list[dict]]:
             "restaurants": [
                 dict(r) for r in await conn.fetch(SQL_RESTAURANT_SNAPSHOTS)
             ],
+            "livreurs": [dict(r) for r in await conn.fetch(SQL_LIVREUR_SNAPSHOTS)],
             "zones": [dict(r) for r in await conn.fetch(SQL_ZONE_SNAPSHOTS)],
             "agg_incident_types": [
                 dict(r) for r in await conn.fetch(SQL_AGG_INCIDENT_TYPES)

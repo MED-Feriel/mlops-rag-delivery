@@ -27,6 +27,18 @@ class QdrantVectorStore:
         self.collection = collection
         self._ensure_collection()
 
+    # Champs filtrables (payload index keyword) — alignés sur les meta des builders
+    PAYLOAD_INDEXES = [
+        "source",
+        "source_service",
+        "topic",
+        "zone",
+        "criticite",
+        "type_event",
+        "categorie",
+        "vehicule_type",
+    ]
+
     def _ensure_collection(self) -> None:
         existing = [c.name for c in self.client.get_collections().collections]
         if self.collection not in existing:
@@ -36,14 +48,7 @@ class QdrantVectorStore:
                 # HNSW tuning pour 100K+ vecteurs : meilleur rappel/latence
                 hnsw_config=HnswConfigDiff(m=16, ef_construct=200),
             )
-            for field in [
-                "source",
-                "source_service",
-                "topic",
-                "zone",
-                "criticite",
-                "type_event",
-            ]:
+            for field in self.PAYLOAD_INDEXES:
                 self.client.create_payload_index(
                     collection_name=self.collection,
                     field_name=field,
@@ -51,16 +56,20 @@ class QdrantVectorStore:
                 )
             log.info("Collection Qdrant créée", collection=self.collection)
         else:
-            # Collection déjà existante (167K points) : garantir l'index
-            # source_service sans recréer la collection. Idempotent côté Qdrant.
-            try:
-                self.client.create_payload_index(
-                    collection_name=self.collection,
-                    field_name="source_service",
-                    field_schema="keyword",
-                )
-            except Exception as e:
-                log.debug("index source_service déjà présent ou non créé", error=str(e))
+            # Collection déjà existante : garantir les index récents
+            # (source_service, categorie, vehicule_type) sans recréer la
+            # collection. create_payload_index est idempotent côté Qdrant.
+            for field in ("source_service", "categorie", "vehicule_type"):
+                try:
+                    self.client.create_payload_index(
+                        collection_name=self.collection,
+                        field_name=field,
+                        field_schema="keyword",
+                    )
+                except Exception as e:
+                    log.debug(
+                        "index déjà présent ou non créé", field=field, error=str(e)
+                    )
 
     def upsert(
         self,

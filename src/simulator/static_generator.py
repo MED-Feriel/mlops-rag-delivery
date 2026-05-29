@@ -90,6 +90,7 @@ async def insert_restaurants(conn, cfg: dict, zones: list[dict]) -> list[dict]:
     n = cfg["volume"]["nb_restaurants"]
     zone_weights = [z["poids"] for z in zones]
     ids, noms, zone_ids, cuisines, notes = [], [], [], [], []
+    categories, heures_ouv, heures_ferm, tels, delais_prep = [], [], [], [], []
     rows = []
 
     # Distribution Pareto-like : top restaurants concentrés sur premières zones populaires
@@ -98,22 +99,36 @@ async def insert_restaurants(conn, cfg: dict, zones: list[dict]) -> list[dict]:
         nom = algerian_names.random_nom_restaurant(zone=z["nom"], idx=i)
         cuisine = random.choice(TYPES_CUISINE)
         note = float(np.clip(np.random.normal(4.0, 0.5), 1.0, 5.0))
+        h_ouv, h_ferm = random.choice(algerian_names.HORAIRES_RESTAURANTS)
         rid = i + 1
         ids.append(rid)
         noms.append(nom)
         zone_ids.append(z["id"])
         cuisines.append(cuisine)
         notes.append(note)
+        categories.append(random.choice(algerian_names.CATEGORIES_RESTAURANTS))
+        heures_ouv.append(h_ouv)
+        heures_ferm.append(h_ferm)
+        tels.append(algerian_names.random_telephone())
+        delais_prep.append(random.randint(8, 35))
         rows.append({"id": rid, "zone_id": z["id"], "nom": nom})
 
     await conn.execute(
-        """INSERT INTO restaurants (id, nom, zone_id, type_cuisine, note_moyenne)
-           SELECT * FROM unnest($1::int[], $2::text[], $3::int[], $4::text[], $5::float8[])""",
+        """INSERT INTO restaurants (id, nom, zone_id, type_cuisine, note_moyenne,
+                                    categorie, heure_ouverture, heure_fermeture,
+                                    telephone, delai_prep_moyen)
+           SELECT * FROM unnest($1::int[], $2::text[], $3::int[], $4::text[], $5::float8[],
+                                $6::text[], $7::int2[], $8::int2[], $9::text[], $10::int2[])""",
         ids,
         noms,
         zone_ids,
         cuisines,
         notes,
+        categories,
+        heures_ouv,
+        heures_ferm,
+        tels,
+        delais_prep,
     )
     log.info("restaurants insérés", n=len(rows))
     return rows
@@ -127,11 +142,12 @@ async def insert_livreurs(conn, cfg: dict, zones: list[dict]) -> list[dict]:
     notes_pds = list(note_dist.values())
 
     ids, prenoms, noms_fam, zone_ids, notes, tels = [], [], [], [], [], []
+    vehicules, experiences, ponctualites = [], [], []
     rows = []
 
     for i in range(n):
         z = random.choices(zones, zone_weights)[0]
-        genre = "femme" if random.random() < 0.05 else "homme"
+        genre = "homme"
         prenom, nom = algerian_names.random_nom_complet(genre)
         # Note discrète selon distribution config (5..1)
         note = float(random.choices(notes_choix, notes_pds)[0])
@@ -144,17 +160,27 @@ async def insert_livreurs(conn, cfg: dict, zones: list[dict]) -> list[dict]:
         zone_ids.append(z["id"])
         notes.append(note)
         tels.append(algerian_names.random_telephone())
+        vehicules.append(
+            random.choices(["moto", "voiture", "velo"], weights=[0.60, 0.35, 0.05])[0]
+        )
+        experiences.append(random.randint(1, 8))
+        ponctualites.append(round(min(5.0, max(1.0, random.gauss(4.1, 0.5))), 1))
         rows.append({"id": lid, "zone_id": z["id"]})
 
     await conn.execute(
-        """INSERT INTO livreurs (id, prenom, nom, zone_principale_id, note_moyenne, telephone)
-           SELECT * FROM unnest($1::int[], $2::text[], $3::text[], $4::int[], $5::float8[], $6::text[])""",
+        """INSERT INTO livreurs (id, prenom, nom, zone_principale_id, note_moyenne,
+                                 telephone, vehicule_type, annee_experience, note_ponctualite)
+           SELECT * FROM unnest($1::int[], $2::text[], $3::text[], $4::int[], $5::float8[],
+                                $6::text[], $7::text[], $8::int2[], $9::numeric[])""",
         ids,
         prenoms,
         noms_fam,
         zone_ids,
         notes,
         tels,
+        vehicules,
+        experiences,
+        ponctualites,
     )
     log.info("livreurs insérés", n=len(rows))
     return rows
@@ -235,6 +261,8 @@ def _build_row_buckets():
                 "delai_reel_min",
                 "note_livreur",
                 "commentaire",
+                "canal_commande",
+                "delai_preparation_reel_min",
                 "created_at",
                 "livre_at",
             )
@@ -364,6 +392,12 @@ def _process_events(
     c["delai_reel_min"].append(delai_reel)
     c["note_livreur"].append(note_livreur)
     c["commentaire"].append(commentaire)
+    c["canal_commande"].append(
+        random.choices(["app_mobile", "web", "telephone"], weights=[0.65, 0.25, 0.10])[
+            0
+        ]
+    )
+    c["delai_preparation_reel_min"].append(max(5, int(random.gauss(15, 6))))
     c["created_at"].append(created_at)
     c["livre_at"].append(livre_at)
 
@@ -457,13 +491,15 @@ async def _flush_buckets(conn, buckets: dict) -> None:
                   id, restaurant_id, livreur_id, client_id, zone_id,
                   montant, frais_livraison, montant_total, statut,
                   methode_paiement, delai_estime_min, delai_reel_min,
-                  note_livreur, commentaire, created_at, livre_at
+                  note_livreur, commentaire, canal_commande,
+                  delai_preparation_reel_min, created_at, livre_at
                )
                SELECT * FROM unnest(
                   $1::int[], $2::int[], $3::int[], $4::int[], $5::int[],
                   $6::float8[], $7::float8[], $8::float8[], $9::text[],
                   $10::text[], $11::int[], $12::int[],
-                  $13::float8[], $14::text[], $15::timestamp[], $16::timestamp[]
+                  $13::float8[], $14::text[], $15::text[], $16::int2[],
+                  $17::timestamp[], $18::timestamp[]
                )""",
             c["id"],
             c["restaurant_id"],
@@ -479,6 +515,8 @@ async def _flush_buckets(conn, buckets: dict) -> None:
             c["delai_reel_min"],
             c["note_livreur"],
             c["commentaire"],
+            c["canal_commande"],
+            c["delai_preparation_reel_min"],
             c["created_at"],
             c["livre_at"],
         )

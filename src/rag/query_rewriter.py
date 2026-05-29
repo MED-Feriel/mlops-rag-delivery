@@ -66,14 +66,45 @@ _SOURCE_KEYWORDS: dict[str, str] = {
 _FAMILLE3_PATTERN = (
     r"\bétat de santé\b|\bsanté de la plateforme\b|\bsanté du système\b"
     r"|\bsanté système\b|\bétat du système\b|\bétat système\b"
-    r"|\btaux de succès\b|\blatence[s]?\b|\bmétrique[s]?\b|\bmonitoring\b"
-    r"|\bservices? up\b|\bperformance du rag\b|\bétat de la plateforme\b"
-    r"|\brag est[- ]il\b|\bsnapshot\b|\bsystème\b"
+    r"|\btaux de succès\b|\bsuccess.rate\b|\blatence[s]?\b|\blatency\b"
+    r"|\bmétrique[s]?\b|\bmonitoring\b|\bprometheus\b|\bgrafana\b"
+    r"|\bservices? up\b|\bservices? en panne\b|\bperformance\b|\bdébit\b"
+    r"|\bthroughput\b|\bmémoire\b|\bcpu\b|\bscore contexte\b|\bhealth\b"
+    r"|\bétat de la plateforme\b|\brag est[- ]il\b|\bsnapshot\b|\bsystème\b"
 )
 _FAMILLE2_PATTERN = (
     r"\blogs?\b|\berreur[s]? récente[s]?\b|\bwarn(ing)?s?\b"
     r"|\bmessage[s]? d'erreur\b|\bdans les logs\b"
 )
+# Note : "panne"/"crash" ne déclenchent PAS la Famille 2 (sinon "panne dns" et
+# "panne du restaurant" seraient mal routés vers les logs ES au lieu de leurs
+# type_event métier). Ils restent dans _LOG_LEVEL_KEYWORDS ci-dessous, donc
+# n'agissent que si la Famille 2 est déjà déclenchée par "logs"/"erreur".
+
+# ── Famille 2 : niveau de log + service applicatif ─────────────
+# Ordre important : warn testé avant error (sinon "logs" matcherait error).
+_LOG_LEVEL_KEYWORDS: dict[str, str] = {
+    r"\bwarning\b|\bavertissement\b|\bwarn\b": "log_warn",
+    r"\blog(s)?\b|\berreur(s)?\b|\bpanne\b|\bcrash\b": "log_error",
+}
+_LOG_SERVICE_KEYWORDS: dict[str, str] = {
+    r"\bpayment.service\b|\bpaiement.service\b|\bpaiement\b": "payment-service",
+    r"\bdispatch\b|\btracking\b": "tracking-service",
+}
+
+# ── Famille 1 : catégorie restaurant + véhicule livreur ────────
+_CATEGORIE_KEYWORDS: dict[str, str] = {
+    r"\bpizza\b": "Pizza",
+    r"\bfast.?food\b": "Fast Food",
+    r"\bburger[s]?\b": "Burgers",
+    r"\bcouscous\b": "Couscous",
+    r"\bshawarma\b|\bchawarma\b": "Shawarma",
+}
+_VEHICULE_KEYWORDS: dict[str, str] = {
+    r"\bmoto[s]?\b": "moto",
+    r"\bvoiture[s]?\b": "voiture",
+    r"\bvelo[s]?\b|\bvélo[s]?\b": "velo",
+}
 
 # ── Types d'événement ──────────────────────────────────────────
 _TYPE_EVENT_KEYWORDS: dict[str, str] = {
@@ -221,6 +252,30 @@ def rewrite_query(query: str) -> dict:
         qdrant_filters["source"] = "elasticsearch"
         matched["famille"] = "2_logs"
         famille = "2"
+        # Niveau de log (log_warn/log_error) et service applicatif si précisés.
+        lvl = _match_any(q_lower, _LOG_LEVEL_KEYWORDS)
+        if lvl:
+            qdrant_filters["type_event"] = lvl
+            matched["log_level"] = lvl
+        svc = _match_any(q_lower, _LOG_SERVICE_KEYWORDS)
+        if svc:
+            qdrant_filters["source_service"] = svc
+            matched["source_service"] = svc
+
+    # Famille 1 : entité métier ciblée (catégorie resto / véhicule livreur).
+    # Ces filtres remplacent le type_event générique (docs snapshot, pas métier).
+    metier_entity = False
+    if not famille:
+        categorie = _match_any(q_lower, _CATEGORIE_KEYWORDS)
+        if categorie:
+            qdrant_filters["categorie"] = categorie
+            matched["categorie"] = categorie
+            metier_entity = True
+        vehicule = _match_any(q_lower, _VEHICULE_KEYWORDS)
+        if vehicule:
+            qdrant_filters["vehicule_type"] = vehicule
+            matched["vehicule_type"] = vehicule
+            metier_entity = True
 
     crit = _match_any(q_lower, _CRITICITE_KEYWORDS)
     if crit:
@@ -232,9 +287,9 @@ def rewrite_query(query: str) -> dict:
         qdrant_filters["zone"] = zone
         matched["zone"] = zone
 
-    # type_event ne s'applique pas aux sources temps réel (ES/Prometheus) dont
-    # le type_event est log_warn/health_snapshot, pas les valeurs métier.
-    if not famille:
+    # type_event ne s'applique pas aux sources temps réel (ES/Prometheus) ni aux
+    # requêtes ciblant une entité métier (resto/livreur, dont type_event=snapshot).
+    if not famille and not metier_entity:
         type_event = _match_any(q_lower, _TYPE_EVENT_KEYWORDS)
         if type_event:
             qdrant_filters["type_event"] = type_event

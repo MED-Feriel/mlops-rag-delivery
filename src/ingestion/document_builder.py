@@ -37,13 +37,17 @@ def doc_commande(row: dict) -> tuple[str, str, dict]:
         if row["note_livreur"]
         else "non notée"
     )
+    montant_total = row.get("montant_total") or row["montant"]
+    canal = row.get("canal_commande") or "app_mobile"
+    prep = row.get("delai_preparation_reel_min")
+    prep_str = f"{prep} min" if prep is not None else "N/A"
     text = (
-        f"Commande #{row['id']} — {row['statut']} — créée le {_fmt_dt(row['created_at'])} "
-        f"en zone {row['zone_nom']}.\n"
+        f"Commande #{row['id']} via {canal} — {row['statut']} — "
+        f"créée le {_fmt_dt(row['created_at'])} en zone {row['zone_nom']}.\n"
         f"Restaurant: {row['restaurant_nom']} — Livreur: {row['livreur_nom']} — "
-        f"Montant: {row['montant']:.0f} DA — Paiement: {row['methode_paiement']}.\n"
-        f"Délai estimé: {row['delai_estime_min']} min — Délai réel: "
-        f"{row['delai_reel_min'] or 'N/A'} min ({retard_str}) — {note}.\n"
+        f"Montant total: {montant_total:.0f} DZD — Paiement: {row['methode_paiement']}.\n"
+        f"Préparation: {prep_str} — Délai estimé livraison: {row['delai_estime_min']} min "
+        f"— Délai réel: {row['delai_reel_min'] or 'N/A'} min ({retard_str}) — {note}.\n"
         f"Commentaire client: {row['commentaire'] or '(aucun)'}"
     )
     criticite = (
@@ -55,6 +59,7 @@ def doc_commande(row: dict) -> tuple[str, str, dict]:
         "type_event": row["statut"],
         "criticite": criticite,
         "zone": row["zone_nom"],
+        "canal_commande": row.get("canal_commande") or "app_mobile",
     }
     return f"commande-{row['id']}", text, meta
 
@@ -95,10 +100,18 @@ def doc_avis(row: dict) -> tuple[str, str, dict]:
 def doc_restaurant(row: dict) -> tuple[str, str, dict]:
     n = row["nb_commandes_30j"] or 0
     taux_ann = (row["nb_annulees"] / n) if n else 0.0
+    categorie = row.get("categorie") or row["type_cuisine"]
+    h_ouv = row.get("heure_ouverture")
+    h_ferm = row.get("heure_fermeture")
+    horaires = f"{h_ouv}h-{h_ferm}h" if h_ouv is not None else "N/A"
+    delai_prep = row.get("delai_prep_moyen")
+    prep_str = f"{delai_prep} min" if delai_prep is not None else "N/A"
     text = (
-        f"Restaurant '{row['nom']}' (cuisine: {row['type_cuisine']}, zone: {row['zone_nom']}).\n"
+        f"Restaurant '{row['nom']}' — catégorie: {categorie} "
+        f"(cuisine: {row['type_cuisine']}) — zone: {row['zone_nom']} — "
+        f"ouvert: {horaires} — délai préparation: {prep_str}.\n"
         f"Sur les 30 derniers jours: {n} commandes, {row['nb_annulees']} annulées "
-        f"({taux_ann*100:.1f}%), {row['nb_echouees']} échouées.\n"
+        f"({taux_ann*100:.1f}% taux d'annulation), {row['nb_echouees']} échouées.\n"
         f"Note moyenne livreurs: {(row['note_moyenne_30j'] or 0):.2f}/5 — "
         f"Retard moyen: {(row['retard_moyen'] or 0):.1f} min — "
         f"Note référence: {(row['note_moyenne'] or 0):.2f}/5."
@@ -110,8 +123,37 @@ def doc_restaurant(row: dict) -> tuple[str, str, dict]:
         "type_event": "snapshot",
         "criticite": criticite,
         "zone": row["zone_nom"],
+        "categorie": categorie,
     }
     return f"restaurant-{row['id']}", text, meta
+
+
+def doc_livreur(row: dict) -> tuple[str, str, dict]:
+    """Snapshot livreur : véhicule, expérience, livraisons réussies (30j)."""
+    nb_ok = row.get("nb_livraisons_reussies") or 0
+    nb_cmd = row.get("nb_commandes_30j") or 0
+    vehicule = row.get("vehicule_type") or "inconnu"
+    exp = row.get("annee_experience")
+    exp_str = f"{exp} ans" if exp is not None else "N/A"
+    text = (
+        f"Livreur {row['prenom']} {row['nom']} — vehicule: {vehicule} — "
+        f"zone: {row['zone_nom']} — experience: {exp_str} — "
+        f"note: {(row['note_moyenne'] or 0):.1f}/5 — "
+        f"ponctualite: {(row.get('note_ponctualite') or 0):.1f}/5 — "
+        f"statut: {row.get('statut') or 'actif'}.\n"
+        f"Sur les 30 derniers jours: {nb_cmd} commandes, "
+        f"{nb_ok} livraisons réussies, {row.get('nb_echecs') or 0} échecs/annulations — "
+        f"retard moyen {(row.get('retard_moyen') or 0):.1f} min."
+    )
+    meta = {
+        "source": "livreurs",
+        "topic": "livreur",
+        "type_event": "snapshot",
+        "criticite": "info",
+        "zone": row["zone_nom"],
+        "vehicule_type": vehicule,
+    }
+    return f"livreur-{row['id']}", text, meta
 
 
 def doc_zone(row: dict) -> tuple[str, str, dict]:
@@ -350,6 +392,7 @@ def build_documents(
         ("avis_clients", doc_avis),
         ("commandes", doc_commande),
         ("restaurants", doc_restaurant),
+        ("livreurs", doc_livreur),
         ("zones", doc_zone),
     ]
     for key, fn in per_row_builders:

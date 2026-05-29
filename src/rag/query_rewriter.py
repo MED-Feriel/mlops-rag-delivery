@@ -113,6 +113,17 @@ _VEHICULE_KEYWORDS: dict[str, str] = {
     r"\bvelo[s]?\b|\bvélo[s]?\b": "velo",
 }
 
+# ── Famille 4 : intention de synthèse / diagnostic ─────────────
+# Pour ces questions ("causes", "pourquoi", "résume"…), on NE veut PAS appliquer
+# le filtre type_event (ex: "causes de retard" → type_event=retard) car cela
+# exclut le document de synthèse `synthese-incidents` qui contient justement la
+# ventilation des causes/facteurs. On laisse donc remonter les docs agrégés.
+_SYNTHESE_PATTERN = (
+    r"\bcauses?\b|\bpourquoi\b|\braisons?\b|\bfacteurs?\b"
+    r"|\bsynth[èe]se\b|\br[ée]sum[eé]\b|\borigine[s]?\b|\bexplique"
+    r"|\bfr[ée]quent|\br[ée]current"
+)
+
 # ── Types d'événement ──────────────────────────────────────────
 _TYPE_EVENT_KEYWORDS: dict[str, str] = {
     r"\bretard[s]?\b|\bretardé[s]?\b|\ben retard\b|\bperturbé[s]?\b|\bbloqué[s]?\b": "retard",
@@ -294,9 +305,15 @@ def rewrite_query(query: str) -> dict:
         qdrant_filters["zone"] = zone
         matched["zone"] = zone
 
-    # type_event ne s'applique pas aux sources temps réel (ES/Prometheus) ni aux
-    # requêtes ciblant une entité métier (resto/livreur, dont type_event=snapshot).
-    if not famille and not metier_entity:
+    # Intention de synthèse/diagnostic (F4) → on laisse remonter les docs agrégés
+    # (synthese-*) en n'appliquant PAS le filtre type_event qui les exclurait.
+    is_synthese = bool(re.search(_SYNTHESE_PATTERN, q_lower))
+    if is_synthese:
+        matched["synthese"] = True
+
+    # type_event ne s'applique pas aux sources temps réel (ES/Prometheus), aux
+    # requêtes ciblant une entité métier (resto/livreur), ni aux synthèses.
+    if not famille and not metier_entity and not is_synthese:
         type_event = _match_any(q_lower, _TYPE_EVENT_KEYWORDS)
         if type_event:
             qdrant_filters["type_event"] = type_event

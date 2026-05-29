@@ -58,6 +58,23 @@ _SOURCE_KEYWORDS: dict[str, str] = {
     r"\brestaurant[s]?\b": "restaurants",
 }
 
+# ── Routage Familles temps réel (prioritaire) ──────────────────
+# Famille 3 : état système / monitoring → snapshot Prometheus (source=prometheus)
+# Famille 2 : logs applicatifs / erreurs récentes → logs ES (source=elasticsearch)
+# Ces sources ne contiennent que quelques docs face aux 167K docs métier : sans
+# filtre explicite elles ne remontent jamais dans le top-k vectoriel.
+_FAMILLE3_PATTERN = (
+    r"\bétat de santé\b|\bsanté de la plateforme\b|\bsanté du système\b"
+    r"|\bsanté système\b|\bétat du système\b|\bétat système\b"
+    r"|\btaux de succès\b|\blatence[s]?\b|\bmétrique[s]?\b|\bmonitoring\b"
+    r"|\bservices? up\b|\bperformance du rag\b|\bétat de la plateforme\b"
+    r"|\brag est[- ]il\b|\bsnapshot\b|\bsystème\b"
+)
+_FAMILLE2_PATTERN = (
+    r"\blogs?\b|\berreur[s]? récente[s]?\b|\bwarn(ing)?s?\b"
+    r"|\bmessage[s]? d'erreur\b|\bdans les logs\b"
+)
+
 # ── Types d'événement ──────────────────────────────────────────
 _TYPE_EVENT_KEYWORDS: dict[str, str] = {
     r"\bretard[s]?\b|\bretardé[s]?\b|\ben retard\b|\bperturbé[s]?\b|\bbloqué[s]?\b": "retard",
@@ -192,6 +209,19 @@ def rewrite_query(query: str) -> dict:
     qdrant_filters: dict = {}
     matched: dict = {}
 
+    # Routage Familles 2/3 EN PREMIER : si la question vise l'état système ou les
+    # logs, on filtre directement sur la source temps réel et on court-circuite
+    # le matching générique (type_event/source) qui sur-contraindrait à tort.
+    famille: str | None = None
+    if re.search(_FAMILLE3_PATTERN, q_lower):
+        qdrant_filters["source"] = "prometheus"
+        matched["famille"] = "3_metriques"
+        famille = "3"
+    elif re.search(_FAMILLE2_PATTERN, q_lower):
+        qdrant_filters["source"] = "elasticsearch"
+        matched["famille"] = "2_logs"
+        famille = "2"
+
     crit = _match_any(q_lower, _CRITICITE_KEYWORDS)
     if crit:
         qdrant_filters["criticite"] = crit
@@ -202,14 +232,16 @@ def rewrite_query(query: str) -> dict:
         qdrant_filters["zone"] = zone
         matched["zone"] = zone
 
-    type_event = _match_any(q_lower, _TYPE_EVENT_KEYWORDS)
-    if type_event:
-        qdrant_filters["type_event"] = type_event
-        matched["type_event"] = type_event
+    # type_event ne s'applique pas aux sources temps réel (ES/Prometheus) dont
+    # le type_event est log_warn/health_snapshot, pas les valeurs métier.
+    if not famille:
+        type_event = _match_any(q_lower, _TYPE_EVENT_KEYWORDS)
+        if type_event:
+            qdrant_filters["type_event"] = type_event
+            matched["type_event"] = type_event
 
-    # Source : moins prioritaire (peut surcontrainer). On ne l'applique
-    # que si aucun type_event ni criticité ne sont déjà extraits, ou si
-    # la mention est explicite ("avis", "incident").
+    # Source générique : moins prioritaire (peut surcontrainer). On ne l'applique
+    # que si aucune autre règle (famille/type_event/criticité) n'a matché.
     if not matched:
         source = _match_any(q_lower, _SOURCE_KEYWORDS)
         if source:

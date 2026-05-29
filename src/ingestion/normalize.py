@@ -2,15 +2,16 @@
 
 Schéma cible :
     {
-        "id":         str,
-        "source":     str,           # commandes, incidents, restaurants, zones, kafka, synthese
-        "topic":      str,
-        "timestamp":  str (ISO UTC),
-        "zone":       str,
-        "statut":     str,
-        "criticite":  str ("haute"|"moyenne"|"basse"|"info"),
-        "type_event": str,
-        "texte":      str,
+        "id":             str,
+        "source":         str,       # commandes, incidents, restaurants, zones, kafka, synthese
+        "source_service": str,       # client-service, payment-service, ... (filtrage Qdrant)
+        "topic":          str,
+        "timestamp":      str (ISO UTC),
+        "zone":           str,
+        "statut":         str,
+        "criticite":      str ("haute"|"moyenne"|"basse"|"info"),
+        "type_event":     str,
+        "texte":          str,
     }
 """
 
@@ -21,6 +22,7 @@ from datetime import datetime, timezone
 UNIFIED_FIELDS = {
     "id",
     "source",
+    "source_service",
     "topic",
     "timestamp",
     "zone",
@@ -28,6 +30,14 @@ UNIFIED_FIELDS = {
     "criticite",
     "type_event",
     "texte",
+}
+
+# Mapping source → (type_event par défaut, source_service) pour les sources métier.
+# source_service est conservé dans le payload Qdrant pour permettre le filtrage.
+_SOURCE_DEFAULTS = {
+    "avis_clients": ("feedback", "client-service"),
+    "paiements": ("paiement", "payment-service"),
+    "restaurants": ("restaurant", "restaurant-service"),
 }
 
 
@@ -63,15 +73,21 @@ def normalize(doc: dict) -> dict:
     champs manquants. Calcule ``criticite`` à partir de ``delai_reel_min`` ou
     ``retard_min`` si présent et non déjà spécifié.
     """
+    source = doc.get("source", "unknown")
+    default_type, default_service = _SOURCE_DEFAULTS.get(source, (None, None))
+
     out: dict = {
         "id": str(doc.get("id") or doc.get("_id") or ""),
-        "source": doc.get("source", "unknown"),
-        "topic": doc.get("topic", doc.get("source", "unknown")),
+        "source": source,
+        # source_service explicite du doc, sinon défaut selon la source métier
+        "source_service": doc.get("source_service") or default_service or "unknown",
+        "topic": doc.get("topic", source),
         "timestamp": _to_iso_utc(doc.get("timestamp") or doc.get("created_at")),
         "zone": doc.get("zone") or doc.get("zone_nom") or "all",
         "statut": doc.get("statut") or doc.get("type_event") or "n/a",
         "type_event": doc.get("type_event")
         or doc.get("type")
+        or default_type
         or doc.get("statut")
         or "n/a",
         "texte": doc.get("texte") or doc.get("text") or "",

@@ -136,6 +136,15 @@ class RAGPipelineWithMLflow:
             log.info("[RAG-MLflow] query_rewriter", **rewritten["matched"])
         return merged, rewritten.get("date_range")
 
+    # Sources temps réel (Familles 2/3) : peu de docs, embedding faiblement
+    # aligné → le filtre de source garantit la pertinence, on relâche le seuil.
+    _REALTIME_SOURCES = {"prometheus", "elasticsearch"}
+
+    def _threshold_for(self, filters: Optional[dict]) -> Optional[float]:
+        if filters and filters.get("source") in self._REALTIME_SOURCES:
+            return 0.05
+        return None
+
     async def query(
         self,
         question: str,
@@ -173,7 +182,10 @@ class RAGPipelineWithMLflow:
                 start_retrieve = time.time()
                 retrieve_k = top_k * 3 if date_range else top_k
                 chunks = self.retriever.retrieve(
-                    question, top_k=retrieve_k, filters=merged_filters
+                    question,
+                    top_k=retrieve_k,
+                    filters=merged_filters,
+                    score_threshold=self._threshold_for(merged_filters),
                 )
                 chunks = filter_by_date_range(chunks, date_range)[:top_k]
                 retrieve_time = (time.time() - start_retrieve) * 1000  # ms
@@ -304,7 +316,10 @@ class RAGPipelineWithMLflow:
                 start = time.time()
                 retrieve_k = top_k * 3 if date_range else top_k
                 chunks = self.retriever.retrieve(
-                    question, top_k=retrieve_k, filters=merged_filters
+                    question,
+                    top_k=retrieve_k,
+                    filters=merged_filters,
+                    score_threshold=self._threshold_for(merged_filters),
                 )
                 chunks = filter_by_date_range(chunks, date_range)[:top_k]
                 retrieve_time = (time.time() - start) * 1000
@@ -391,7 +406,10 @@ class RAGPipelineWithMLflow:
                 start_retrieve = time.time()
                 retrieve_k = top_k * 3 if date_range else top_k
                 chunks = self.retriever.retrieve(
-                    embedding_query, top_k=retrieve_k, filters=merged_filters
+                    embedding_query,
+                    top_k=retrieve_k,
+                    filters=merged_filters,
+                    score_threshold=self._threshold_for(merged_filters),
                 )
                 chunks = filter_by_date_range(chunks, date_range)[:top_k]
                 retrieve_time = (time.time() - start_retrieve) * 1000
@@ -478,7 +496,10 @@ class RAGPipelineWithMLflow:
                 )
                 retrieve_k = top_k * 3 if date_range else top_k
                 chunks = self.retriever.retrieve(
-                    embedding_query, top_k=retrieve_k, filters=merged_filters
+                    embedding_query,
+                    top_k=retrieve_k,
+                    filters=merged_filters,
+                    score_threshold=self._threshold_for(merged_filters),
                 )
                 chunks = filter_by_date_range(chunks, date_range)[:top_k]
                 context = build_context(chunks)

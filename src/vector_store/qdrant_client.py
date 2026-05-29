@@ -12,6 +12,7 @@ from qdrant_client.models import (
     FieldCondition,
     MatchValue,
     UpdateStatus,
+    HnswConfigDiff,
 )
 from typing import Optional
 import uuid
@@ -32,14 +33,34 @@ class QdrantVectorStore:
             self.client.create_collection(
                 collection_name=self.collection,
                 vectors_config=VectorParams(size=384, distance=Distance.COSINE),
+                # HNSW tuning pour 100K+ vecteurs : meilleur rappel/latence
+                hnsw_config=HnswConfigDiff(m=16, ef_construct=200),
             )
-            for field in ["source", "topic", "zone", "criticite", "type_event"]:
+            for field in [
+                "source",
+                "source_service",
+                "topic",
+                "zone",
+                "criticite",
+                "type_event",
+            ]:
                 self.client.create_payload_index(
                     collection_name=self.collection,
                     field_name=field,
                     field_schema="keyword",
                 )
             log.info("Collection Qdrant créée", collection=self.collection)
+        else:
+            # Collection déjà existante (167K points) : garantir l'index
+            # source_service sans recréer la collection. Idempotent côté Qdrant.
+            try:
+                self.client.create_payload_index(
+                    collection_name=self.collection,
+                    field_name="source_service",
+                    field_schema="keyword",
+                )
+            except Exception as e:
+                log.debug("index source_service déjà présent ou non créé", error=str(e))
 
     def upsert(
         self,

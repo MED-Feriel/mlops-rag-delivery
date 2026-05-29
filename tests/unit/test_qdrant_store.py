@@ -39,8 +39,8 @@ def test_init_skips_creation_when_collection_exists():
 def test_init_creates_collection_when_missing():
     store, mock_client = _make_store(existing_collections=("autre",))
     mock_client.create_collection.assert_called_once()
-    # 5 index payload attendus
-    assert mock_client.create_payload_index.call_count == 5
+    # 6 index payload attendus : source, source_service, topic, zone, criticite, type_event
+    assert mock_client.create_payload_index.call_count == 6
 
 
 def test_upsert_returns_count_on_success():

@@ -27,17 +27,29 @@ class RetrievalService:
         self.default_top_k = top_k
 
     def retrieve(
-        self, question: str, top_k: int | None = None, filters: Optional[dict] = None
+        self,
+        question: str,
+        top_k: int | None = None,
+        filters: Optional[dict] = None,
+        score_threshold: float | None = None,
     ) -> list[dict]:
-        """Recherche Qdrant avec seuil de score 0.30 (déjà appliqué côté store)."""
+        """Recherche Qdrant avec seuil de score (défaut ``SCORE_THRESHOLD`` 0.20).
+
+        ``score_threshold`` peut être abaissé par l'appelant quand un filtre de
+        source restrictif (ex: source=prometheus, 1 seul doc) garantit déjà la
+        pertinence topique — le seuil global pénaliserait alors à tort ces docs.
+        """
         k = top_k or self.default_top_k
+        threshold = SCORE_THRESHOLD if score_threshold is None else score_threshold
 
         start_embedding = time.time()
         query_vector = self.embedder.embed_query(question)
         RAG_EMBEDDING_DURATION.observe(time.time() - start_embedding)
 
-        results = self.vector_store.search(query_vector, top_k=k, filters=filters)
-        filtered = [r for r in results if r.get("score", 0.0) >= SCORE_THRESHOLD]
+        results = self.vector_store.search(
+            query_vector, top_k=k, filters=filters, score_threshold=threshold
+        )
+        filtered = [r for r in results if r.get("score", 0.0) >= threshold]
 
         average_score = (
             sum(r.get("score", 0.0) for r in filtered) / len(filtered)

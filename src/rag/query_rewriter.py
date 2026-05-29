@@ -68,9 +68,16 @@ _FAMILLE3_PATTERN = (
     r"|\bsanté système\b|\bétat du système\b|\bétat système\b"
     r"|\btaux de succès\b|\bsuccess.rate\b|\blatence[s]?\b|\blatency\b"
     r"|\bmétrique[s]?\b|\bmonitoring\b|\bprometheus\b|\bgrafana\b"
-    r"|\bservices? up\b|\bservices? en panne\b|\bperformance\b|\bdébit\b"
+    r"|\bservices? up\b|\bperformance\b|\bdébit\b"
     r"|\bthroughput\b|\bmémoire\b|\bcpu\b|\bscore contexte\b|\bhealth\b"
     r"|\bétat de la plateforme\b|\brag est[- ]il\b|\bsnapshot\b|\bsystème\b"
+    # État d'un/des service(s) : "services sont en panne", "service down",
+    # "quels services actifs"… → snapshot Prometheus. Exige le mot "service"
+    # à proximité de panne/down/actif pour ne PAS capter "panne dns" ou
+    # "panne du restaurant" (qui restent des incidents métier).
+    r"|\bservices?\b[^.\n]{0,20}\b(en panne|panne|down|inactif|arrêté|hors service|actif)"
+    r"|\b(en panne|down|inactif|hors service)\b[^.\n]{0,20}\bservices?\b"
+    r"|\bquels services\b"
 )
 _FAMILLE2_PATTERN = (
     r"\blogs?\b|\berreur[s]? récente[s]?\b|\bwarn(ing)?s?\b"
@@ -313,6 +320,24 @@ def rewrite_query(query: str) -> dict:
     date_range = _extract_date_range(query)
     if date_range:
         matched["date_range"] = (date_range[0].isoformat(), date_range[1].isoformat())
+
+    # Incrément métrique Prometheus "rag_query_family_total" — famille déduite
+    # de l'intent extrait. On choisit l'étiquette la plus informative dispo
+    # (familles >> type_event >> source >> criticité >> "generique").
+    famille_label = (
+        matched.get("famille")
+        or matched.get("type_event")
+        or matched.get("source")
+        or (f"criticite:{matched['criticite']}" if matched.get("criticite") else None)
+        or "generique"
+    )
+    try:
+        from src.monitoring.prometheus_metrics import RAG_QUERY_FAMILY_TOTAL
+
+        RAG_QUERY_FAMILY_TOTAL.labels(famille=str(famille_label)).inc()
+    except Exception:
+        # En tests / hors API container, ignorer si module non importable.
+        pass
 
     return {
         "question": query,

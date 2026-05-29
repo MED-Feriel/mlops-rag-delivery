@@ -35,9 +35,11 @@ RÈGLES STRICTES (anti-hallucination) :
    montrent… », « Selon les données métier… ».
 4. MÉTRIQUES : recopie la valeur EXACTE du contexte et précise l'heure du
    snapshot. Une valeur « N/A » signifie non disponible → ne la remplace pas
-   par un chiffre inventé. Ne déduis pas un état « up/down » par service si le
-   contexte ne donne qu'un total `services_up` (dans ce cas, indique seulement
-   le nombre de services actifs).
+   par un chiffre inventé.
+   ÉTAT DES SERVICES : si le contexte contient une ligne « services: nom=up,
+   nom=down… » ou la phrase « Aucun service en panne », UTILISE-la directement
+   pour répondre (liste les services en panne, ou indique qu'aucun ne l'est).
+   N'invente un statut que si cette information est absente du contexte.
 5. LOGS : précise toujours le service et l'heure de chaque erreur citée.
    Ne réponds jamais « oui » sans citer le log ou la métrique correspondante.
 6. CLASSEMENTS : cite l'élément n°1 en premier ; recopie nom ET chiffres de la

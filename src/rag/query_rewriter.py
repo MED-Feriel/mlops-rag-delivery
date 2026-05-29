@@ -52,10 +52,15 @@ _ZONES_CANONIQUES = [
 ]
 
 # ── Sources (table d'origine du document) ──────────────────────
+# zone(s) en DERNIER (priorité basse) : ne s'applique que si aucune zone précise
+# n'est nommée (sinon le filtre zone= prend le relais) et qu'aucune autre source
+# ne matche. Permet de router "quelle zone a les délais les plus longs ?" vers
+# les snapshots de zones plutôt que vers une recherche non filtrée.
 _SOURCE_KEYWORDS: dict[str, str] = {
     r"\bavis\b|\bcommentaire[s]?\b|\bnote[s]?\b": "avis_clients",
     r"\bincident[s]?\b": "incidents",
     r"\brestaurant[s]?\b": "restaurants",
+    r"\bzone[s]?\b|\bquartier[s]?\b": "zones",
 }
 
 # ── Routage Familles temps réel (prioritaire) ──────────────────

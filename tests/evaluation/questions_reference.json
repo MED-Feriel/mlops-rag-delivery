@@ -1,0 +1,207 @@
+{
+  "version": "1.0",
+  "total": 20,
+  "description": "Questions de référence pour l'évaluation déterministe du pipeline RAG. 5 questions par famille (F1 métier, F2 logs, F3 métriques, F4 diagnostic). La pertinence d'un document récupéré est jugée sur sa source attendue et/ou la présence des entités attendues — pas de juge LLM (pas de RAGAS).",
+  "questions": [
+    {
+      "id": "F1_Q1",
+      "famille": "F1",
+      "question": "Quels restaurants ont le plus de retards ce mois ?",
+      "intent_attendu": "top_restaurants_retards",
+      "entites_attendues": ["restaurant", "retard"],
+      "source_attendue": "synthese",
+      "reponse_reference": "Le top des restaurants problématiques est dans le document agrégé top_restaurants (pct_problemes et retard_moyen décroissants).",
+      "metriques": ["top1_accuracy", "mrr", "precision@k"]
+    },
+    {
+      "id": "F1_Q2",
+      "famille": "F1",
+      "question": "Quel est le taux de livraison à temps dans la zone Hydra ?",
+      "intent_attendu": "zone_performance",
+      "entites_attendues": ["Hydra", "zone"],
+      "source_attendue": "synthese",
+      "reponse_reference": "La synthèse zone Hydra donne le retard moyen et le taux d'annulation, comparés à la moyenne plateforme.",
+      "metriques": ["top1_accuracy", "mrr", "precision@k"]
+    },
+    {
+      "id": "F1_Q3",
+      "famille": "F1",
+      "question": "Quels livreurs ont les meilleures notes ?",
+      "intent_attendu": "top_livreurs_notes",
+      "entites_attendues": ["livreur", "note"],
+      "source_attendue": "livreurs",
+      "reponse_reference": "Les snapshots livreurs portent la note moyenne et le nombre de livraisons réussies.",
+      "metriques": ["top1_accuracy", "mrr", "precision@k"]
+    },
+    {
+      "id": "F1_Q4",
+      "famille": "F1",
+      "question": "Quelle est la commande moyenne en DZD par zone ?",
+      "intent_attendu": "montant_moyen_par_zone",
+      "entites_attendues": ["zone", "montant", "DZD"],
+      "source_attendue": "zones",
+      "reponse_reference": "Les snapshots de zone agrègent le volume et les montants par zone géographique.",
+      "metriques": ["top1_accuracy", "mrr", "precision@k"]
+    },
+    {
+      "id": "F1_Q5",
+      "famille": "F1",
+      "question": "Quels sont les incidents les plus fréquents ?",
+      "intent_attendu": "synthese_incidents",
+      "entites_attendues": ["incident", "type"],
+      "source_attendue": "synthese",
+      "reponse_reference": "La synthèse incidents classe les types d'incidents par fréquence sur 30 jours.",
+      "metriques": ["top1_accuracy", "mrr", "precision@k"]
+    },
+    {
+      "id": "F2_Q1",
+      "famille": "F2",
+      "question": "Y a-t-il des timeouts sur payment-service ?",
+      "intent_attendu": "logs_erreur_service",
+      "entites_attendues": ["paiement", "timeout", "erreur"],
+      "source_attendue": "elasticsearch",
+      "reponse_reference": "Les logs ERROR/WARN indexés depuis Elasticsearch couvrent les échecs et abandons de paiement.",
+      "metriques": ["top1_accuracy", "mrr", "precision@k"]
+    },
+    {
+      "id": "F2_Q2",
+      "famille": "F2",
+      "question": "Quels services ont le plus d'erreurs 5xx ?",
+      "intent_attendu": "logs_erreur_5xx",
+      "entites_attendues": ["erreur", "service"],
+      "source_attendue": "elasticsearch",
+      "reponse_reference": "Les events de niveau ERROR récents indexés depuis Elasticsearch.",
+      "metriques": ["top1_accuracy", "mrr", "precision@k"]
+    },
+    {
+      "id": "F2_Q3",
+      "famille": "F2",
+      "question": "Y a-t-il des erreurs de connexion refusée ?",
+      "intent_attendu": "logs_connexion_refusee",
+      "entites_attendues": ["erreur", "connexion"],
+      "source_attendue": "elasticsearch",
+      "reponse_reference": "Les logs ERROR récents (échecs) indexés depuis Elasticsearch.",
+      "metriques": ["top1_accuracy", "mrr", "precision@k"]
+    },
+    {
+      "id": "F2_Q4",
+      "famille": "F2",
+      "question": "Quels logs critiques dans la dernière heure ?",
+      "intent_attendu": "logs_critiques_recents",
+      "entites_attendues": ["log", "critique", "erreur"],
+      "source_attendue": "elasticsearch",
+      "reponse_reference": "Les logs ERROR (criticité haute) indexés toutes les 2 minutes depuis Elasticsearch.",
+      "metriques": ["top1_accuracy", "mrr", "precision@k"]
+    },
+    {
+      "id": "F2_Q5",
+      "famille": "F2",
+      "question": "Y a-t-il des anomalies sur dispatch-service ?",
+      "intent_attendu": "logs_anomalies_service",
+      "entites_attendues": ["livraison", "anomalie", "erreur"],
+      "source_attendue": "elasticsearch",
+      "reponse_reference": "Les logs WARN/ERROR liés à la livraison (échouée, retard) depuis Elasticsearch.",
+      "metriques": ["top1_accuracy", "mrr", "precision@k"]
+    },
+    {
+      "id": "F3_Q1",
+      "famille": "F3",
+      "question": "Quel est l'état de santé de la plateforme ?",
+      "intent_attendu": "snapshot_sante",
+      "entites_attendues": ["santé", "système", "services"],
+      "source_attendue": "prometheus",
+      "reponse_reference": "Le snapshot santé Prometheus (ID fixe) donne taux de succès, latences, services up.",
+      "metriques": ["top1_accuracy", "mrr", "precision@k"]
+    },
+    {
+      "id": "F3_Q2",
+      "famille": "F3",
+      "question": "Quelle est la latence moyenne de l'API RAG ?",
+      "intent_attendu": "metrique_latence",
+      "entites_attendues": ["latence", "API"],
+      "source_attendue": "prometheus",
+      "reponse_reference": "Le snapshot Prometheus porte la latence p95 RAG et LLM.",
+      "metriques": ["top1_accuracy", "mrr", "precision@k"]
+    },
+    {
+      "id": "F3_Q3",
+      "famille": "F3",
+      "question": "Y a-t-il des services en panne ?",
+      "intent_attendu": "services_down",
+      "entites_attendues": ["services", "panne", "up"],
+      "source_attendue": "prometheus",
+      "reponse_reference": "Le snapshot Prometheus liste les services up/down (métrique up par job).",
+      "metriques": ["top1_accuracy", "mrr", "precision@k"]
+    },
+    {
+      "id": "F3_Q4",
+      "famille": "F3",
+      "question": "Quel est le taux de succès des requêtes RAG ?",
+      "intent_attendu": "metrique_taux_succes",
+      "entites_attendues": ["taux", "succès", "RAG"],
+      "source_attendue": "prometheus",
+      "reponse_reference": "Le snapshot Prometheus expose rag_success_rate.",
+      "metriques": ["top1_accuracy", "mrr", "precision@k"]
+    },
+    {
+      "id": "F3_Q5",
+      "famille": "F3",
+      "question": "Quelle est la charge actuelle des requêtes actives ?",
+      "intent_attendu": "metrique_charge",
+      "entites_attendues": ["requêtes", "actives", "charge"],
+      "source_attendue": "prometheus",
+      "reponse_reference": "Le snapshot Prometheus porte rag_active_requests.",
+      "metriques": ["top1_accuracy", "mrr", "precision@k"]
+    },
+    {
+      "id": "F4_Q1",
+      "famille": "F4",
+      "question": "Pourquoi y a-t-il plus de retards à Hydra ?",
+      "intent_attendu": "diagnostic_zone",
+      "entites_attendues": ["Hydra", "retard", "zone"],
+      "source_attendue": "synthese",
+      "reponse_reference": "La synthèse zone Hydra croise retard, incidents dominants et restaurants problématiques vs moyenne plateforme.",
+      "metriques": ["top1_accuracy", "mrr", "precision@k"]
+    },
+    {
+      "id": "F4_Q2",
+      "famille": "F4",
+      "question": "Donne-moi un diagnostic rapide de la plateforme",
+      "intent_attendu": "diagnostic_global",
+      "entites_attendues": ["plateforme", "synthèse", "incidents"],
+      "source_attendue": "synthese",
+      "reponse_reference": "Les documents de synthèse (incidents, paiements, tendance volume) donnent une vue agrégée.",
+      "metriques": ["top1_accuracy", "mrr", "precision@k"]
+    },
+    {
+      "id": "F4_Q3",
+      "famille": "F4",
+      "question": "Quelle est la corrélation entre les incidents et les retards par zone ?",
+      "intent_attendu": "diagnostic_correlation",
+      "entites_attendues": ["incidents", "retard", "zone"],
+      "source_attendue": "synthese",
+      "reponse_reference": "Les synthèses incidents_par_zone et zone_synthese permettent de croiser incidents et retards.",
+      "metriques": ["top1_accuracy", "mrr", "precision@k"]
+    },
+    {
+      "id": "F4_Q4",
+      "famille": "F4",
+      "question": "Y a-t-il un problème systémique sur les paiements ?",
+      "intent_attendu": "diagnostic_paiements",
+      "entites_attendues": ["paiement", "synthèse"],
+      "source_attendue": "synthese",
+      "reponse_reference": "La synthèse paiements agrège les statuts par méthode de paiement sur 24h.",
+      "metriques": ["top1_accuracy", "mrr", "precision@k"]
+    },
+    {
+      "id": "F4_Q5",
+      "famille": "F4",
+      "question": "Quel est le résumé opérationnel des derniers jours ?",
+      "intent_attendu": "diagnostic_tendance",
+      "entites_attendues": ["tendance", "volume", "commandes"],
+      "source_attendue": "synthese",
+      "reponse_reference": "La synthèse tendance_volume donne le volume journalier, annulations et retards sur 14 jours.",
+      "metriques": ["top1_accuracy", "mrr", "precision@k"]
+    }
+  ]
+}

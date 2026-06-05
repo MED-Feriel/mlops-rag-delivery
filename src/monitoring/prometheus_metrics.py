@@ -48,6 +48,22 @@ RAG_ACTIVE_REQUESTS = Gauge(
     "Nombre de requêtes RAG actives en cours",
 )
 
+RAG_TOP1_SCORE = Gauge(
+    "rag_top1_score",
+    "Score du meilleur document récupéré (top-1)",
+)
+
+# Cache Redis d'embeddings (réutilise RAG_EMBEDDING_DURATION pour la latence).
+RAG_EMBEDDING_CACHE_HITS = Counter(
+    "rag_embedding_cache_hits_total",
+    "Nombre de hits du cache Redis d'embeddings",
+)
+
+RAG_EMBEDDING_CACHE_MISSES = Counter(
+    "rag_embedding_cache_misses_total",
+    "Nombre de misses du cache Redis d'embeddings",
+)
+
 
 def extract_zone_filter(filters: dict | None) -> str:
     """Extraire une étiquette zone_filter simple depuis les filtres Qdrant."""

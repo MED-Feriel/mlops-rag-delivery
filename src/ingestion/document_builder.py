@@ -323,6 +323,115 @@ def doc_tendance_volume(rows: list[dict]) -> tuple[str, str, dict] | None:
     return "synthese-tendance-volume", text, meta
 
 
+def build_zone_synthese(
+    zones: list[dict],
+    top_restaurants: list[dict],
+    incidents_par_zone: list[dict],
+) -> list[tuple[str, str, dict]]:
+    """Construit un document de synthèse-diagnostic par zone géographique (F4).
+
+    Un document par zone ayant un volume significatif (> 50 commandes/30j),
+    croisant trois sources pour répondre aux questions « pourquoi plus de
+    retards à <zone> ? » :
+      - retard et note moyens de la zone, taux d'annulation ;
+      - comparaison au retard moyen plateforme (pondéré par le volume) ;
+      - restaurants problématiques situés dans la zone ;
+      - types d'incidents dominants de la zone.
+
+    Indexé avec ``source=synthese`` (donc jamais chunké, cf. ``chunk_documents``)
+    et ``topic=zone_synthese``. Retourne une liste de tuples
+    ``(id, texte, meta)`` — vide si aucune zone exploitable.
+    """
+    if not zones:
+        return []
+
+    # Retard moyen plateforme pondéré par le volume de commandes par zone.
+    total_cmd = sum((z.get("nb_commandes_30j") or 0) for z in zones)
+    if total_cmd > 0:
+        retard_plateforme = (
+            sum(
+                (z.get("retard_moyen") or 0) * (z.get("nb_commandes_30j") or 0)
+                for z in zones
+            )
+            / total_cmd
+        )
+    else:
+        retard_plateforme = 0.0
+
+    # Index restaurants problématiques et incidents par nom de zone.
+    resto_par_zone: dict[str, list[dict]] = {}
+    for r in top_restaurants:
+        resto_par_zone.setdefault(r.get("zone_nom", ""), []).append(r)
+    incidents_par_nom: dict[str, list[dict]] = {}
+    for i in incidents_par_zone:
+        incidents_par_nom.setdefault(i.get("zone_nom", ""), []).append(i)
+
+    docs: list[tuple[str, str, dict]] = []
+    for z in zones:
+        nom = z.get("nom", "?")
+        nb_cmd = z.get("nb_commandes_30j") or 0
+        if nb_cmd <= 50:  # zone trop peu active pour une synthèse fiable
+            continue
+
+        retard = z.get("retard_moyen") or 0.0
+        note = z.get("note_moyenne") or 0.0
+        nb_annulees = z.get("nb_annulees") or 0
+        taux_annul = 100.0 * nb_annulees / nb_cmd if nb_cmd else 0.0
+        ecart = retard - retard_plateforme
+        sens = "au-dessus" if ecart > 0 else "en dessous"
+        comparaison = (
+            f"{abs(ecart):.1f} min {sens} de la moyenne plateforme "
+            f"({retard_plateforme:.1f} min)"
+        )
+
+        restos = sorted(
+            resto_par_zone.get(nom, []),
+            key=lambda r: (r.get("pct_problemes") or 0),
+            reverse=True,
+        )[:3]
+        if restos:
+            resto_lines = "\n".join(
+                f"  - {r.get('nom', '?')}: {r.get('pct_problemes') or 0:.1f}% "
+                f"commandes problématiques, retard moy "
+                f"{r.get('retard_moyen') or 0:.1f} min"
+                for r in restos
+            )
+        else:
+            resto_lines = "  - (aucun restaurant problématique identifié)"
+
+        incidents = sorted(
+            incidents_par_nom.get(nom, []),
+            key=lambda i: (i.get("n") or 0),
+            reverse=True,
+        )[:3]
+        if incidents:
+            inc_str = ", ".join(
+                f"{i.get('type', '?')}={i.get('n', 0)}" for i in incidents
+            )
+        else:
+            inc_str = "aucun incident notable"
+
+        text = (
+            f"Synthèse zone {nom} (30 derniers jours) — "
+            f"{nb_cmd} commandes, retard moyen {retard:.1f} min "
+            f"({comparaison}).\n"
+            f"Note livreur moyenne {note:.2f}/5 — taux d'annulation "
+            f"{taux_annul:.1f}% ({nb_annulees} annulées).\n"
+            f"Causes / incidents dominants : {inc_str}.\n"
+            f"Restaurants problématiques de la zone :\n{resto_lines}"
+        )
+        meta = {
+            "source": "synthese",
+            "topic": "zone_synthese",
+            "type_event": "agregation",
+            "criticite": "haute" if ecart > 5 else "info",
+            "zone": nom,
+        }
+        docs.append((f"synthese-zone-{z.get('id', nom)}", text, meta))
+
+    return docs
+
+
 _KAFKA_TEMPLATES = {
     "incident_ouvert": (
         "Incident ouvert via Kafka — type {type}, sévérité {severite}, "
@@ -426,5 +535,16 @@ def build_documents(
             ids.append(doc_id)
             texts.append(text)
             metas.append(meta)
+
+    # Synthèses-diagnostic par zone (F4) : croisent zones × restaurants × incidents.
+    # Renvoie une liste (un doc par zone), traitée à part des builders mono-doc.
+    for doc_id, text, meta in build_zone_synthese(
+        extract_result.get("zones", []),
+        extract_result.get("agg_top_restaurants", []),
+        extract_result.get("agg_incidents_par_zone", []),
+    ):
+        ids.append(doc_id)
+        texts.append(text)
+        metas.append(meta)
 
     return ids, texts, metas

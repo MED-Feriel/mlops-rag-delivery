@@ -10,8 +10,9 @@ Routes FastAPI avec tracking MLflow intégré:
 
 import time
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from src.api.auth import get_current_principal
 from src.api.models import QueryRequest, QueryResponse
 from src.monitoring.prometheus_metrics import (
     RAG_ACTIVE_REQUESTS,
@@ -40,7 +41,9 @@ def _get_pipeline() -> RAGPipelineWithMLflow:
 
 
 @router.post("/query", response_model=QueryResponse)
-async def query(req: QueryRequest) -> QueryResponse:
+async def query(
+    req: QueryRequest, principal: str = Depends(get_current_principal)
+) -> QueryResponse:
     """
     Requête RAG simple.
 
@@ -91,13 +94,16 @@ async def query(req: QueryRequest) -> QueryResponse:
         status = "error"
         RAG_QUERY_TOTAL.labels(status=status, zone_filter=zone).inc()
         log.error(f"[API] Erreur query: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        detail = str(e) or f"{type(e).__name__} (aucun détail — voir les logs API)"
+        raise HTTPException(status_code=500, detail=detail)
     finally:
         RAG_ACTIVE_REQUESTS.dec()
 
 
 @router.post("/query/stream")
-async def query_stream(req: QueryRequest) -> StreamingResponse:
+async def query_stream(
+    req: QueryRequest, principal: str = Depends(get_current_principal)
+) -> StreamingResponse:
     """
     Requête RAG avec streaming.
 
@@ -127,7 +133,9 @@ async def query_stream(req: QueryRequest) -> StreamingResponse:
 
 
 @router.post("/chat", response_model=QueryResponse)
-async def chat(req: QueryRequest) -> QueryResponse:
+async def chat(
+    req: QueryRequest, principal: str = Depends(get_current_principal)
+) -> QueryResponse:
     """
     Chat RAG avec historique.
 
@@ -187,8 +195,38 @@ async def chat(req: QueryRequest) -> QueryResponse:
         RAG_ACTIVE_REQUESTS.dec()
 
 
+@router.get("/cache/stats")
+async def cache_stats() -> dict:
+    """Statistiques du cache Redis d'embeddings (taux de hit, TTL)."""
+    retriever = _get_pipeline().retriever
+    if not getattr(retriever, "cache_enabled", False):
+        return {"enabled": False, "message": "Cache Redis non disponible"}
+    stats = retriever.cache.get_stats()
+    return {
+        "enabled": True,
+        "hit_rate_pct": stats["hit_rate"],
+        "hits": stats["hit"],
+        "misses": stats["miss"],
+        "errors": stats["error"],
+        "total_requests": stats["total"],
+        "ttl_sec": get_settings().redis_ttl_embedding_sec,
+    }
+
+
+@router.delete("/cache/flush")
+async def cache_flush() -> dict:
+    """Vide le cache Redis (utile après mise à jour du modèle d'embedding)."""
+    retriever = _get_pipeline().retriever
+    if not getattr(retriever, "cache_enabled", False):
+        return {"flushed": 0, "message": "Cache non disponible"}
+    deleted = retriever.cache.flush()
+    return {"flushed": deleted, "message": f"{deleted} entrées supprimées"}
+
+
 @router.post("/chat/stream")
-async def chat_stream(req: QueryRequest) -> StreamingResponse:
+async def chat_stream(
+    req: QueryRequest, principal: str = Depends(get_current_principal)
+) -> StreamingResponse:
     """Chat RAG avec streaming."""
     try:
         messages = req.messages or []

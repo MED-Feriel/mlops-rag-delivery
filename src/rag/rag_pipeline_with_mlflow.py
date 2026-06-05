@@ -49,7 +49,9 @@ class RAGPipelineWithMLflow:
             port=settings.qdrant_port,
             collection=settings.qdrant_collection,
         )
-        self.retriever = RetrievalService(self.embedder, self.vector_store)
+        self.retriever = RetrievalService(
+            self.embedder, self.vector_store, settings=settings
+        )
 
         # LLM avec MLflow
         self.llm = LLMWithMLflow(

@@ -27,12 +27,34 @@ class RAGPipeline:
             port=settings.qdrant_port,
             collection=settings.qdrant_collection,
         )
-        self.retriever = RetrievalService(self.embedder, self.vector_store)
+        self.retriever = RetrievalService(
+            self.embedder, self.vector_store, settings=settings
+        )
+        # Retrieval hybride (dense + BM25 + RRF) activé par défaut ; basculable
+        # via la config pour comparer/débuguer face au dense pur.
+        self.use_hybrid = getattr(settings, "retrieval_hybrid", True)
         self.llm = LLMService(
             host=settings.ollama_host,
             port=settings.ollama_port,
             model=settings.ollama_model,
             timeout=settings.ollama_timeout,
+        )
+
+    def _retrieve(
+        self, query: str, retrieve_k: int, filters: Optional[dict]
+    ) -> list[dict]:
+        """Dispatche vers le retrieval hybride ou dense selon ``use_hybrid``.
+
+        Centralise le choix de stratégie et le seuil de score pour les 4 points
+        d'entrée du pipeline (query / stream / chat / chat_stream).
+        """
+        threshold = self._threshold_for(filters)
+        if self.use_hybrid:
+            return self.retriever.retrieve_hybrid(
+                query, top_k=retrieve_k, filters=filters, score_threshold=threshold
+            )
+        return self.retriever.retrieve(
+            query, top_k=retrieve_k, filters=filters, score_threshold=threshold
         )
 
     def _rewrite_and_merge_filters(
@@ -70,12 +92,7 @@ class RAGPipeline:
         # Si on filtre par date post-retrieval, on récupère plus large pour
         # garder du contexte après l'élagage.
         retrieve_k = top_k * 3 if date_range else top_k
-        chunks = self.retriever.retrieve(
-            question,
-            top_k=retrieve_k,
-            filters=merged_filters,
-            score_threshold=self._threshold_for(merged_filters),
-        )
+        chunks = self._retrieve(question, retrieve_k, merged_filters)
         chunks = filter_by_date_range(chunks, date_range)[:top_k]
         context = build_context(chunks)
         ok, refus = check_context(context)
@@ -89,12 +106,7 @@ class RAGPipeline:
     ) -> AsyncGenerator[str, None]:
         merged_filters, date_range = self._rewrite_and_merge_filters(question, filters)
         retrieve_k = top_k * 3 if date_range else top_k
-        chunks = self.retriever.retrieve(
-            question,
-            top_k=retrieve_k,
-            filters=merged_filters,
-            score_threshold=self._threshold_for(merged_filters),
-        )
+        chunks = self._retrieve(question, retrieve_k, merged_filters)
         chunks = filter_by_date_range(chunks, date_range)[:top_k]
         context = build_context(chunks)
         ok, refus = check_context(context)
@@ -124,12 +136,7 @@ class RAGPipeline:
             embedding_query, filters
         )
         retrieve_k = top_k * 3 if date_range else top_k
-        chunks = self.retriever.retrieve(
-            embedding_query,
-            top_k=retrieve_k,
-            filters=merged_filters,
-            score_threshold=self._threshold_for(merged_filters),
-        )
+        chunks = self._retrieve(embedding_query, retrieve_k, merged_filters)
         chunks = filter_by_date_range(chunks, date_range)[:top_k]
         context = build_context(chunks)
         ok, refus = check_context(context)
@@ -146,12 +153,7 @@ class RAGPipeline:
             embedding_query, filters
         )
         retrieve_k = top_k * 3 if date_range else top_k
-        chunks = self.retriever.retrieve(
-            embedding_query,
-            top_k=retrieve_k,
-            filters=merged_filters,
-            score_threshold=self._threshold_for(merged_filters),
-        )
+        chunks = self._retrieve(embedding_query, retrieve_k, merged_filters)
         chunks = filter_by_date_range(chunks, date_range)[:top_k]
         context = build_context(chunks)
         ok, refus = check_context(context)

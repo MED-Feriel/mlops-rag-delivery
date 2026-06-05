@@ -9,6 +9,8 @@ volumes:
   mlflow_data:
   airflow_logs:
   open_webui_data:
+  redis_data:
+  hf_cache:
 
 services:
 
@@ -57,7 +59,6 @@ services:
     image: qdrant/qdrant:latest
     ports:
       - "6335:6333"
-      - "6336:6334"
     volumes: [qdrant_data:/qdrant/storage]
     networks: [rag-network]
 
@@ -170,6 +171,22 @@ services:
       - ./src/simulator:/app/simulator
     networks: [rag-network]
 
+  redis:
+    image: redis:7.2-alpine
+    ports: ["6379:6379"]
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - redis_data:/data
+    networks: [rag-network]
+
   open-webui:
     image: ghcr.io/open-webui/open-webui:main
     depends_on: [api]
@@ -198,11 +215,17 @@ services:
       dockerfile: docker/api/Dockerfile
     depends_on:
       qdrant: { condition: service_started }
+      redis: { condition: service_started }
     env_file: .env
     ports: ["8080:8080"]
     volumes:
       - ./src:/app/src
       - ./config:/app/config
+      # Modèle d'embedding pré-téléchargé localement → chargement disque, zéro
+      # appel HuggingFace (robuste si HF lent/throttlé, portable pour la VM).
+      - ./models:/app/models:ro
+      # Cache HF résiduel persistant (au cas où un autre modèle serait chargé).
+      - hf_cache:/home/apiuser/.cache/huggingface
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks: [rag-network]

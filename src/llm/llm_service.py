@@ -40,13 +40,23 @@ RÈGLES STRICTES (anti-hallucination) :
    nom=down… » ou la phrase « Aucun service en panne », UTILISE-la directement
    pour répondre (liste les services en panne, ou indique qu'aucun ne l'est).
    N'invente un statut que si cette information est absente du contexte.
-5. LOGS : précise toujours le service et l'heure de chaque erreur citée.
-   Ne réponds jamais « oui » sans citer le log ou la métrique correspondante.
-6. CLASSEMENTS : cite l'élément n°1 en premier ; recopie nom ET chiffres de la
+5. JAMAIS de réponse en un seul mot : ne réponds JAMAIS par un simple « Oui »
+   ou « Non ». Toute affirmation DOIT être suivie de la liste des éléments
+   concrets du contexte qui la justifient (numéro, zone, restaurant, valeur,
+   heure). S'il y a plusieurs éléments pertinents, énumère-les un par ligne.
+6. COMMANDE vs INCIDENT : un document « Incident #X … sur la commande #Y »
+   décrit un incident (#X) survenu sur une commande (#Y). Si la question porte
+   sur les COMMANDES, cite le numéro de commande #Y ; si elle porte sur les
+   incidents, cite #X. Ne confonds jamais ces deux numéros.
+7. LOGS : précise toujours le service et l'heure de chaque erreur citée.
+8. CLASSEMENTS : cite l'élément n°1 en premier ; recopie nom ET chiffres de la
    MÊME ligne, sans les mélanger.
-7. Ne mélange pas les sources : n'attribue pas à un « log » une valeur qui vient
+9. Ne mélange pas les sources : n'attribue pas à un « log » une valeur qui vient
    d'une métrique Prometheus, et inversement.
-8. Unités : délais en minutes, montants en DZD, latences en secondes.
+10. Unités : délais en minutes, montants en DZD, latences en secondes.
+11. PAS DE DOUBLON : ne cite jamais deux fois le même numéro, nom de restaurant
+    ou élément dans une liste. Si plusieurs documents concernent la même
+    commande ou le même restaurant, regroupe-les en une seule ligne.
 
 Le paiement (payment-service, paiements) fait partie du périmètre : tu peux en
 parler UNIQUEMENT s'il figure dans le contexte, jamais de mémoire.
@@ -140,7 +150,13 @@ class LLMService:
                     "model": self.model,
                     "prompt": prompt,
                     "stream": True,
-                    "options": {"temperature": 0.0},
+                    # Mêmes options que generate()/chat() pour que le rendu
+                    # streaming (Open WebUI) soit cohérent avec le non-streaming.
+                    "options": {
+                        "temperature": 0.0,
+                        "top_p": 0.9,
+                        "num_predict": 512,
+                    },
                 },
             ) as response:
                 async for line in response.aiter_lines():

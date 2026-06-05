@@ -10,12 +10,16 @@ omit =
     src/llm/llm_with_mlflow.py
     src/monitoring/mlflow_tracker.py
     src/monitoring/model_versioning.py
-    # Composants nécessitant des services externes (Kafka, Postgres) — testés en intégration
+    # Composants nécessitant des services externes (Kafka, Postgres, ES, Prometheus) — testés en intégration
     src/simulator/main.py
     src/simulator/realtime_producer.py
     src/simulator/state_machine.py
+    src/simulator/static_generator.py
+    src/simulator/anomaly_injector.py
     src/ingestion/extract.py
     src/ingestion/run_etl.py
+    src/ingestion/extract_elasticsearch.py
+    src/ingestion/extract_prometheus.py
     # Fichiers d'init vides et __main__
     src/**/__init__.py
 

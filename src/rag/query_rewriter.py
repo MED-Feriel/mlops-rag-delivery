@@ -127,6 +127,12 @@ _SYNTHESE_PATTERN = (
     r"\bcauses?\b|\bpourquoi\b|\braisons?\b|\bfacteurs?\b"
     r"|\bsynth[èe]se\b|\br[ée]sum[eé]\b|\borigine[s]?\b|\bexplique"
     r"|\bfr[ée]quent|\br[ée]current"
+    # Questions superlatives / classement (« le plus de retards », « top
+    # restaurants », « les pires zones ») : on veut le document agrégé Top-N
+    # — déjà classé et dédupliqué — plutôt qu'une liste d'événements
+    # individuels qui produisent des doublons côté LLM.
+    r"|\b(?:le|la|les)\s+plus\b|\btop\b|\bclassement\b|\bpalmar[èe]s\b"
+    r"|\bpires?\b|\bmeilleur"
 )
 
 # ── Types d'événement ──────────────────────────────────────────

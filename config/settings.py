@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     kafka_bootstrap_servers: str = "localhost:9092"
     kafka_group_id: str = "rag-etl-group"
     qdrant_host: str = "localhost"
-    qdrant_port: int = 6336  # Port mappé: 6336->6334
+    qdrant_port: int = 6335
     qdrant_collection: str = "livraison_rag"
     qdrant_vector_size: int = 384
     ollama_host: str = "localhost"
@@ -24,8 +24,27 @@ class Settings(BaseSettings):
     chunk_overlap: int = 64
     retrieval_top_k: int = 8
     retrieval_score_threshold: float = 0.20
+    retrieval_hybrid: bool = True  # dense + BM25 + RRF (False = dense pur)
+    # ── Cache Redis des embeddings de questions ────────────────
+    redis_host: str = "redis"
+    redis_port: int = 6379
+    redis_ttl_embedding_sec: int = 3600  # 1h
+    redis_max_cache_size: int = 10000
+    embedding_cache_enabled: bool = True  # False = désactive le cache
     mlflow_tracking_uri: str = "http://localhost:5000"
     mlflow_experiment: str = "rag-livraison"
+    # ── Authentification API (JWT) ──────────────────────────────
+    # Désactivée par défaut pour la démo locale / Open WebUI ; activer
+    # (AUTH_ENABLED=true) pour un déploiement entreprise.
+    auth_enabled: bool = False
+    jwt_secret: str = "change-me-en-prod-secret-jwt-aleatoire"
+    jwt_algorithm: str = "HS256"
+    jwt_expiry_min: int = 60
+    auth_username: str = "admin"
+    auth_password: str = "admin"
+    # Jeton de service (service-to-service) — utilisé par Open WebUI comme
+    # OPENAI_API_KEY quand l'auth est activée. Vide = désactivé.
+    api_service_token: str = ""
     logstash_host: str = "localhost"
     logstash_port: int = 5044
     ragas_metrics: list = ["faithfulness", "answer_relevancy", "context_precision"]

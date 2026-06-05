@@ -32,9 +32,11 @@ def _make_pipeline_with_mocks():
         "src.rag.rag_pipeline.LLMService"
     ) as mock_llm:
         mock_retriever = MagicMock()
-        mock_retriever.retrieve.return_value = [
-            {"text": "doc1", "score": 0.9, "metadata": {"source": "k"}}
-        ]
+        _docs = [{"text": "doc1", "score": 0.9, "metadata": {"source": "k"}}]
+        # Le pipeline utilise le retrieval hybride par défaut ; on mocke les deux
+        # chemins pour couvrir hybride (défaut) et dense (use_hybrid=False).
+        mock_retriever.retrieve.return_value = _docs
+        mock_retriever.retrieve_hybrid.return_value = _docs
         mock_ret.return_value = mock_retriever
 
         mock_llm_inst = MagicMock()
@@ -84,8 +86,18 @@ async def test_query_returns_answer_and_contexts():
     out = await pipeline.query("Quels livreurs en retard ?", top_k=5)
     assert out["answer"] == "Réponse mockée"
     assert len(out["contexts"]) == 1
-    mock_ret.retrieve.assert_called_once()
+    mock_ret.retrieve_hybrid.assert_called_once()  # hybride par défaut
     mock_llm.generate.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_query_dense_path_when_hybrid_disabled():
+    pipeline, mock_ret, mock_llm = _make_pipeline_with_mocks()
+    pipeline.use_hybrid = False
+    out = await pipeline.query("Quels livreurs en retard ?", top_k=5)
+    assert out["answer"] == "Réponse mockée"
+    mock_ret.retrieve.assert_called_once()
+    mock_ret.retrieve_hybrid.assert_not_called()
 
 
 async def _async_iter(items):
@@ -102,7 +114,7 @@ async def test_stream_yields_tokens_from_llm():
     async for tok in pipeline.stream("q", top_k=3):
         tokens.append(tok)
     assert tokens == ["Hello", " world"]
-    mock_ret.retrieve.assert_called_once()
+    mock_ret.retrieve_hybrid.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -128,7 +140,7 @@ async def test_chat_uses_embedding_query_built_from_messages():
     out = await pipeline.chat(msgs, top_k=3)
     assert out["answer"] == "Chat mockée"
     # La requête d'embedding doit contenir les messages user
-    embedding_query = mock_ret.retrieve.call_args.args[0]
+    embedding_query = mock_ret.retrieve_hybrid.call_args.args[0]
     assert "Première question" in embedding_query
     assert "Suite ?" in embedding_query
     assert "réponse" not in embedding_query

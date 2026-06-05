@@ -20,6 +20,7 @@ from src.api.routes_with_mlflow import router
 # Sans cet import, /metrics peut ne pas exposer certains histogrammes/gauges
 # si le pipeline n'a pas encore été invoqué.
 import src.monitoring.prometheus_metrics  # noqa: F401
+from src.monitoring.prometheus_metrics import RAG_DATA_DRIFT_PSI
 
 log = structlog.get_logger()
 
@@ -197,6 +198,68 @@ async def prompt_version() -> dict:
         "prompt_version": PROMPT_VERSION,
         "prompt_sha": PROMPT_SHA,
         "length_chars": len(SYSTEM_PROMPT),
+    }
+
+
+@app.get("/monitoring/drift")
+async def data_drift(
+    field: str = "source", sample: int = 500, set_baseline: bool = False
+) -> dict:
+    """Drift de distribution (PSI) d'un champ payload Qdrant vs baseline (C.4).
+
+    Échantillonne ``sample`` points, calcule la distribution de ``field``, la
+    compare à une baseline stockée en Redis (PSI : <0.1 stable, 0.1–0.2 modéré,
+    >0.2 significatif). ``?set_baseline=true`` (re)fixe la référence. Met à jour
+    la gauge Prometheus ``rag_data_drift_psi{field}`` (scrape Grafana / alerte).
+    Pensé pour être appelé périodiquement (DAG Airflow ou cron).
+    """
+    from src.monitoring.drift import (
+        build_redis,
+        distribution_from_points,
+        drift_level,
+        get_baseline,
+        population_stability_index,
+        set_baseline as save_baseline,
+    )
+
+    s = get_settings()
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                f"http://{s.qdrant_host}:6333/collections/"
+                f"{s.qdrant_collection}/points/scroll",
+                json={"limit": sample, "with_payload": True, "with_vector": False},
+            )
+            r.raise_for_status()
+            points = r.json().get("result", {}).get("points", [])
+    except Exception as e:
+        return {"error": str(e) or type(e).__name__, "field": field}
+
+    current = distribution_from_points(points, field)
+    redis_client = build_redis(s)
+    baseline = get_baseline(redis_client, field)
+    if set_baseline or baseline is None:
+        saved = save_baseline(redis_client, field, current)
+        return {
+            "field": field,
+            "n_sampled": len(points),
+            "baseline_set": saved,
+            "distribution": current,
+            "note": "baseline (re)fixée"
+            if saved
+            else "Redis indisponible — baseline non persistée",
+        }
+
+    psi = population_stability_index(baseline, current)
+    level = drift_level(psi)
+    RAG_DATA_DRIFT_PSI.labels(field=field).set(psi)
+    return {
+        "field": field,
+        "n_sampled": len(points),
+        "psi": psi,
+        "drift": level,
+        "baseline": baseline,
+        "current": current,
     }
 
 

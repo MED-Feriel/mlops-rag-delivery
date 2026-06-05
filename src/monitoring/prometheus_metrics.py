@@ -41,6 +41,13 @@ RAG_ANSWER_CACHE_MISSES = Counter(
     "Misses du cache Redis de réponses RAG",
 )
 
+# Drift de distribution (PSI) d'un champ payload Qdrant vs baseline (C.4).
+RAG_DATA_DRIFT_PSI = Gauge(
+    "rag_data_drift_psi",
+    "Population Stability Index d'un champ payload Qdrant vs baseline",
+    ["field"],
+)
+
 # Histograms
 RAG_QUERY_DURATION = Histogram(
     "rag_query_duration_seconds", "Durée totale d'une requête RAG"

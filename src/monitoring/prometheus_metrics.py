@@ -20,6 +20,12 @@ RAG_QUERY_FAMILY_TOTAL = Counter(
     ["famille"],
 )
 
+RAG_FEEDBACK_TOTAL = Counter(
+    "rag_feedback_total",
+    "Feedback utilisateur sur les réponses RAG (pouce haut/bas)",
+    ["rating"],
+)
+
 # Histograms
 RAG_QUERY_DURATION = Histogram(
     "rag_query_duration_seconds", "Durée totale d'une requête RAG"

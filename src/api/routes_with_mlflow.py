@@ -13,9 +13,11 @@ import time
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from src.api.auth import get_current_principal
-from src.api.models import QueryRequest, QueryResponse
+from src.api.feedback_store import FeedbackStore
+from src.api.models import FeedbackRequest, QueryRequest, QueryResponse
 from src.monitoring.prometheus_metrics import (
     RAG_ACTIVE_REQUESTS,
+    RAG_FEEDBACK_TOTAL,
     RAG_QUERY_DURATION,
     RAG_QUERY_TOTAL,
     extract_zone_filter,
@@ -38,6 +40,19 @@ def _get_pipeline() -> RAGPipelineWithMLflow:
         _pipeline = RAGPipelineWithMLflow(settings)
         log.info("[API] Pipeline RAG avec MLflow initialisé")
     return _pipeline
+
+
+_feedback_store: FeedbackStore | None = None
+_feedback_store_ready = False
+
+
+def _get_feedback_store() -> FeedbackStore | None:
+    """Store de feedback (singleton, lazy). None si Redis indisponible."""
+    global _feedback_store, _feedback_store_ready
+    if not _feedback_store_ready:
+        _feedback_store = FeedbackStore.from_settings(get_settings())
+        _feedback_store_ready = True
+    return _feedback_store
 
 
 @router.post("/query", response_model=QueryResponse)
@@ -240,6 +255,46 @@ async def cache_invalidate(query: str) -> dict:
         return {"invalidated": False, "message": "Cache non disponible"}
     removed = retriever.cache.invalidate(query)
     return {"invalidated": removed, "query": query}
+
+
+@router.post("/feedback")
+async def submit_feedback(
+    req: FeedbackRequest, principal: str = Depends(get_current_principal)
+) -> dict:
+    """Enregistre un feedback 👍/👎 sur une réponse RAG.
+
+    Triple destination : compteur Prometheus (``rag_feedback_total`` → Grafana),
+    log structuré (→ Elasticsearch/Kibana) et historique Redis (best-effort, via
+    le feedback store). Le rating doit valoir ``up`` ou ``down``.
+    """
+    rating = (req.rating or "").strip().lower()
+    if rating not in ("up", "down"):
+        raise HTTPException(status_code=400, detail="rating doit être 'up' ou 'down'")
+
+    RAG_FEEDBACK_TOTAL.labels(rating=rating).inc()
+    log.info(
+        "rag_feedback",
+        rating=rating,
+        question=(req.question or "")[:120],
+        has_comment=bool(req.comment),
+    )
+
+    store = _get_feedback_store()
+    persisted = (
+        store.record(rating, req.question, req.answer or "", req.comment or "")
+        if store is not None
+        else False
+    )
+    return {"recorded": True, "rating": rating, "persisted": persisted}
+
+
+@router.get("/feedback/stats")
+async def feedback_stats() -> dict:
+    """Compteurs 👍/👎, taux de satisfaction et derniers feedbacks reçus."""
+    store = _get_feedback_store()
+    if store is None:
+        return {"enabled": False, "message": "Feedback store (Redis) non disponible"}
+    return store.get_stats()
 
 
 @router.post("/chat/stream")

@@ -16,6 +16,8 @@ from datetime import datetime
 
 from src.embeddings.embedder import Embedder
 from src.monitoring.prometheus_metrics import (
+    RAG_ANSWER_CACHE_HITS,
+    RAG_ANSWER_CACHE_MISSES,
     RAG_LLM_FALLBACK_TOTAL,
     RAG_LLM_LATENCY,
 )
@@ -58,6 +60,12 @@ class RAGPipelineWithMLflow:
             self.embedder, self.vector_store, settings=settings
         )
 
+        # B.2 — cache de réponses optionnel (OFF par défaut ; staleness temps
+        # réel). Si activé mais Redis indisponible → None (fallback transparent).
+        self.answer_cache = None
+        if getattr(settings, "answer_cache_enabled", False):
+            self.answer_cache = self._build_answer_cache(settings)
+
         # LLM avec MLflow
         self.llm = LLMWithMLflow(
             host=settings.ollama_host,
@@ -93,6 +101,29 @@ class RAGPipelineWithMLflow:
             self._model_version_info = None
 
         log.info("[RAG-MLflow] Pipeline initialisé")
+
+    @staticmethod
+    def _build_answer_cache(settings):
+        """Construit le cache de réponses Redis, fallback silencieux si KO."""
+        try:
+            import redis
+
+            from src.rag.answer_cache import AnswerCache
+
+            client = redis.Redis(
+                host=settings.redis_host,
+                port=settings.redis_port,
+                socket_connect_timeout=2,
+                socket_timeout=2,
+                decode_responses=False,
+            )
+            client.ping()
+            ttl = getattr(settings, "redis_ttl_answer_sec", 300)
+            log.info("Cache de réponses activé", ttl=ttl)
+            return AnswerCache(client, ttl_sec=ttl)
+        except Exception as e:
+            log.warning("Cache de réponses indisponible — désactivé", error=str(e))
+            return None
 
     def reload_model_version(self) -> Optional[Dict[str, Any]]:
         """Recharger la version Production depuis le Registry (post-promotion)."""
@@ -181,6 +212,16 @@ class RAGPipelineWithMLflow:
         Returns:
             {"answer": str, "contexts": list, "metrics": dict}
         """
+        # B.2 — cache de réponses (optionnel, OFF par défaut). Hit → retour
+        # immédiat sans retrieve/LLM ni run MLflow. TTL court (staleness).
+        if self.answer_cache is not None:
+            cached = self.answer_cache.get(question, top_k, filters)
+            if cached is not None:
+                RAG_ANSWER_CACHE_HITS.inc()
+                log.info("[RAG-MLflow] answer cache HIT")
+                return cached
+            RAG_ANSWER_CACHE_MISSES.inc()
+
         if not run_name:
             run_name = f"rag_query_{datetime.now().isoformat()}"
 
@@ -311,7 +352,7 @@ class RAGPipelineWithMLflow:
                     total_time_ms=retrieve_time + context_time + generate_time,
                 )
 
-                return {
+                response = {
                     "answer": answer,
                     "contexts": chunks,
                     "metrics": {
@@ -320,8 +361,12 @@ class RAGPipelineWithMLflow:
                         "llm_latency_ms": llm_latency,
                         "total_time_ms": retrieve_time + context_time + generate_time,
                         "chunks_retrieved": len(chunks),
+                        "llm_mode": llm_mode,
                     },
                 }
+                if self.answer_cache is not None:
+                    self.answer_cache.set(question, top_k, filters, response)
+                return response
 
             except Exception as e:
                 log.error(f"[RAG-MLflow] Erreur query: {e}", exc_info=True)

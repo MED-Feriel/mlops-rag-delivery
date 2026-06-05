@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     redis_ttl_embedding_sec: int = 3600  # 1h
     redis_max_cache_size: int = 10000
     embedding_cache_enabled: bool = True  # False = désactive le cache
+    # ── Cache de réponses RAG (B.2) — OFF par défaut : données temps réel,
+    # risque de péremption ; n'activer que pour démo/FAQ stables, TTL court.
+    answer_cache_enabled: bool = False
+    redis_ttl_answer_sec: int = 300  # 5 min
     mlflow_tracking_uri: str = "http://localhost:5000"
     mlflow_experiment: str = "rag-livraison"
     # ── Authentification API (JWT) ──────────────────────────────

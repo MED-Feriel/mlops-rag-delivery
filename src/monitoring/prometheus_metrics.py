@@ -31,6 +31,16 @@ RAG_LLM_FALLBACK_TOTAL = Counter(
     "Réponses servies en fallback extractif (LLM indisponible)",
 )
 
+RAG_ANSWER_CACHE_HITS = Counter(
+    "rag_answer_cache_hits_total",
+    "Hits du cache Redis de réponses RAG",
+)
+
+RAG_ANSWER_CACHE_MISSES = Counter(
+    "rag_answer_cache_misses_total",
+    "Misses du cache Redis de réponses RAG",
+)
+
 # Histograms
 RAG_QUERY_DURATION = Histogram(
     "rag_query_duration_seconds", "Durée totale d'une requête RAG"

@@ -212,20 +212,36 @@ async def chat(
 
 @router.get("/cache/stats")
 async def cache_stats() -> dict:
-    """Statistiques du cache Redis d'embeddings (taux de hit, TTL)."""
-    retriever = _get_pipeline().retriever
-    if not getattr(retriever, "cache_enabled", False):
-        return {"enabled": False, "message": "Cache Redis non disponible"}
-    stats = retriever.cache.get_stats()
-    return {
-        "enabled": True,
-        "hit_rate_pct": stats["hit_rate"],
-        "hits": stats["hit"],
-        "misses": stats["miss"],
-        "errors": stats["error"],
-        "total_requests": stats["total"],
-        "ttl_sec": get_settings().redis_ttl_embedding_sec,
-    }
+    """Statistiques des caches Redis : embeddings (B.1) et réponses (B.2)."""
+    pipeline = _get_pipeline()
+    retriever = pipeline.retriever
+    if getattr(retriever, "cache_enabled", False):
+        stats = retriever.cache.get_stats()
+        out = {
+            "enabled": True,
+            "hit_rate_pct": stats["hit_rate"],
+            "hits": stats["hit"],
+            "misses": stats["miss"],
+            "errors": stats["error"],
+            "total_requests": stats["total"],
+            "ttl_sec": get_settings().redis_ttl_embedding_sec,
+        }
+    else:
+        out = {"enabled": False, "message": "Cache Redis non disponible"}
+
+    answer_cache = getattr(pipeline, "answer_cache", None)
+    if answer_cache is not None:
+        a = answer_cache.get_stats()
+        out["answer_cache"] = {
+            "enabled": True,
+            "hit_rate_pct": a["hit_rate"],
+            "hits": a["hit"],
+            "misses": a["miss"],
+            "ttl_sec": get_settings().redis_ttl_answer_sec,
+        }
+    else:
+        out["answer_cache"] = {"enabled": False}
+    return out
 
 
 @router.delete("/cache/flush")

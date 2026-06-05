@@ -10,6 +10,10 @@ def settings():
         qdrant_collection="test_collection",
         ollama_model="gemma3:1b",
         embedding_model="paraphrase-multilingual-MiniLM-L12-v2",
+        # Tests hermétiques : pas de cache Redis réel dans les tests unitaires
+        # (sinon un hit court-circuite l'Embedder mocké → tests non déterministes).
+        embedding_cache_enabled=False,
+        answer_cache_enabled=False,
     )
 
 

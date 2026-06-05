@@ -11,3 +11,8 @@ scrape_configs:
 
 rule_files:
   - "alerts.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']

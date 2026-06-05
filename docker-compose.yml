@@ -143,9 +143,22 @@ services:
 
   prometheus:
     image: prom/prometheus:latest
+    depends_on: [alertmanager]
     ports: ["9090:9090"]
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      # alerts.yml était référencé par rule_files mais jamais monté → règles
+      # absentes dans le conteneur. On le monte explicitement.
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml
+    networks: [rag-network]
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    ports: ["9093:9093"]
+    volumes:
+      - ./prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
     networks: [rag-network]
 
   grafana:

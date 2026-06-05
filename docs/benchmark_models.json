@@ -1,0 +1,98 @@
+{
+  "generated_at": "2026-06-05T18:14:59.832572+00:00",
+  "url": "http://localhost:11434",
+  "num_predict": 256,
+  "runs": 1,
+  "summary": {
+    "gemma3:1b": {
+      "n": 5,
+      "median_s": 4.44,
+      "mean_s": 5.11,
+      "max_s": 8.68,
+      "mean_tokens_per_s": 27.4
+    },
+    "gemma3:4b": {
+      "n": 5,
+      "median_s": 8.3,
+      "mean_s": 10.7,
+      "max_s": 22.95,
+      "mean_tokens_per_s": 10.2
+    }
+  },
+  "per_question": {
+    "gemma3:1b": {
+      "F1_retards": {
+        "wall_s": 8.68,
+        "total_duration_s": 6.51,
+        "eval_count": 27,
+        "tokens_per_s": 27.6,
+        "answer_chars": 96
+      },
+      "F2_incidents": {
+        "wall_s": 4.44,
+        "total_duration_s": 2.41,
+        "eval_count": 31,
+        "tokens_per_s": 26.0,
+        "answer_chars": 91
+      },
+      "F3_restaurant": {
+        "wall_s": 4.49,
+        "total_duration_s": 2.43,
+        "eval_count": 34,
+        "tokens_per_s": 28.1,
+        "answer_chars": 113
+      },
+      "F4_zone": {
+        "wall_s": 4.41,
+        "total_duration_s": 2.37,
+        "eval_count": 30,
+        "tokens_per_s": 26.6,
+        "answer_chars": 93
+      },
+      "synthese": {
+        "wall_s": 3.52,
+        "total_duration_s": 1.45,
+        "eval_count": 8,
+        "tokens_per_s": 28.8,
+        "answer_chars": 17
+      }
+    },
+    "gemma3:4b": {
+      "F1_retards": {
+        "wall_s": 22.95,
+        "total_duration_s": 20.89,
+        "eval_count": 47,
+        "tokens_per_s": 10.1,
+        "answer_chars": 135
+      },
+      "F2_incidents": {
+        "wall_s": 9.45,
+        "total_duration_s": 7.39,
+        "eval_count": 54,
+        "tokens_per_s": 10.1,
+        "answer_chars": 136
+      },
+      "F3_restaurant": {
+        "wall_s": 6.91,
+        "total_duration_s": 4.88,
+        "eval_count": 29,
+        "tokens_per_s": 10.2,
+        "answer_chars": 109
+      },
+      "F4_zone": {
+        "wall_s": 8.3,
+        "total_duration_s": 6.28,
+        "eval_count": 43,
+        "tokens_per_s": 10.3,
+        "answer_chars": 114
+      },
+      "synthese": {
+        "wall_s": 5.9,
+        "total_duration_s": 3.88,
+        "eval_count": 20,
+        "tokens_per_s": 10.2,
+        "answer_chars": 62
+      }
+    }
+  }
+}

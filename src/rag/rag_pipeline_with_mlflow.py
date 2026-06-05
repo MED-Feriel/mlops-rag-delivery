@@ -22,6 +22,7 @@ from src.monitoring.prometheus_metrics import (
 from src.vector_store.qdrant_client import QdrantVectorStore
 from src.retrieval.retrieval_service import RetrievalService
 from src.llm.llm_with_mlflow import LLMWithMLflow
+from src.llm.llm_service import PROMPT_SHA, PROMPT_VERSION
 from src.rag.context_builder import build_context
 from src.rag.fallback import build_extractive_answer
 from src.rag.guardrails import check_context
@@ -107,6 +108,12 @@ class RAGPipelineWithMLflow:
 
     def _log_model_version_tags(self) -> None:
         """Logger les tags/params identifiant la version du modèle servie."""
+        # Version du prompt (C.5) — loggée à chaque run, indépendamment du
+        # Registry, pour corréler qualité et version de prompt.
+        mlflow.set_tag("prompt_version", PROMPT_VERSION)
+        mlflow.log_params(
+            {"prompt_version": PROMPT_VERSION, "prompt_sha": PROMPT_SHA}
+        )
         info = self._model_version_info
         if not info:
             mlflow.set_tag("model_registry_status", "unregistered")

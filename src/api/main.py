@@ -188,6 +188,18 @@ async def model_version() -> dict:
     return {"serving_status": "unregistered", "model_name": "gemma3-rag-livraison"}
 
 
+@app.get("/prompt/version")
+async def prompt_version() -> dict:
+    """Version et empreinte SHA du prompt système servi (versioning C.5)."""
+    from src.llm.llm_service import PROMPT_SHA, PROMPT_VERSION, SYSTEM_PROMPT
+
+    return {
+        "prompt_version": PROMPT_VERSION,
+        "prompt_sha": PROMPT_SHA,
+        "length_chars": len(SYSTEM_PROMPT),
+    }
+
+
 @app.get("/collections/stats", response_model=CollectionStats)
 async def collection_stats() -> CollectionStats:
     s = get_settings()

@@ -1,5 +1,6 @@
 """LLM Service — Gemma3:1b via Ollama — streaming + génération + chat history."""
 
+import hashlib
 import httpx
 import json
 from typing import AsyncGenerator
@@ -61,6 +62,14 @@ RÈGLES STRICTES (anti-hallucination) :
 Le paiement (payment-service, paiements) fait partie du périmètre : tu peux en
 parler UNIQUEMENT s'il figure dans le contexte, jamais de mémoire.
 """
+
+
+# Versioning du prompt système (C.5) : la version est incrémentée à la main à
+# chaque évolution des règles ; le SHA est dérivé du texte pour détecter toute
+# dérive non versionnée. Loggé dans MLflow à chaque run → on corrèle qualité de
+# réponse et version de prompt, et on expose le tout via /prompt/version.
+PROMPT_VERSION = "v1.1"
+PROMPT_SHA = hashlib.sha256(SYSTEM_PROMPT.encode("utf-8")).hexdigest()[:12]
 
 
 def _format_history(messages: list[dict]) -> str:

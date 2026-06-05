@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 
 import httpx
@@ -118,6 +119,43 @@ async def health() -> HealthResponse:
         version=app.version,
         timestamp=datetime.now(timezone.utc).isoformat(),
     )
+
+
+@app.get("/health/embedding")
+async def health_embedding() -> dict:
+    """Santé du modèle d'embedding : chargé ? bonne dimension ? latence ?
+
+    Indispensable en prod : si le volume ``./models`` est absent ou HuggingFace
+    injoignable, le modèle peut ne pas se charger. Cet endpoint le signale
+    explicitement (``status=unhealthy`` + message) au lieu de laisser la
+    première requête RAG échouer plus tard avec une 500 opaque. Réutilise
+    l'embedder du pipeline singleton (pas de second chargement en mémoire).
+    """
+    from src.api.routes_with_mlflow import _get_pipeline
+
+    s = get_settings()
+    info: dict = {"model": s.embedding_model, "expected_dim": s.qdrant_vector_size}
+    try:
+        embedder = _get_pipeline().retriever.embedder
+        start = time.perf_counter()
+        vector = embedder.embed_query("test de santé embedding")
+        latency_ms = round((time.perf_counter() - start) * 1000, 1)
+        dim = len(vector)
+        dim_ok = dim == s.qdrant_vector_size
+        info.update(
+            loaded=True,
+            status="healthy" if dim_ok else "degraded",
+            dim=dim,
+            dim_match=dim_ok,
+            embed_latency_ms=latency_ms,
+        )
+    except Exception as e:
+        info.update(
+            loaded=False,
+            status="unhealthy",
+            error=str(e) or type(e).__name__,
+        )
+    return info
 
 
 @app.post("/admin/reload-model-version")

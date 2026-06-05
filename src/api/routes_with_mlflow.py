@@ -223,6 +223,25 @@ async def cache_flush() -> dict:
     return {"flushed": deleted, "message": f"{deleted} entrées supprimées"}
 
 
+@router.delete("/cache/invalidate")
+async def cache_invalidate(query: str) -> dict:
+    """Invalide l'entrée de cache d'une seule question (invalidation ciblée).
+
+    Contrairement à ``/cache/flush`` (purge totale), n'enlève que le vecteur
+    associé à ``query`` — utile après ré-indexation/correction d'un document
+    précis sans jeter tout le cache. La normalisation (casse + espaces) est
+    identique à celle utilisée à l'écriture, donc « Quels retards ? » invalide
+    bien « quels retards ? ».
+    """
+    if not query or not query.strip():
+        raise HTTPException(status_code=400, detail="paramètre 'query' requis")
+    retriever = _get_pipeline().retriever
+    if not getattr(retriever, "cache_enabled", False):
+        return {"invalidated": False, "message": "Cache non disponible"}
+    removed = retriever.cache.invalidate(query)
+    return {"invalidated": removed, "query": query}
+
+
 @router.post("/chat/stream")
 async def chat_stream(
     req: QueryRequest, principal: str = Depends(get_current_principal)

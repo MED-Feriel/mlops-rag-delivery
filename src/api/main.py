@@ -10,6 +10,7 @@ from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from config.settings import get_settings
+from src.api.auth import router as auth_router
 from src.api.models import CollectionStats, HealthResponse
 from src.api.openai_compat import router as openai_router
 from src.api.routes_with_mlflow import router
@@ -32,10 +33,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(auth_router)
 app.include_router(router)
 app.include_router(openai_router)
 
-log.info("[API] Routes avec MLflow tracking intégrées")
+log.info(
+    "[API] Routes intégrées (MLflow + auth)",
+    auth_enabled=get_settings().auth_enabled,
+)
 
 
 # ─── Métriques Prometheus (best-effort) ────────────────────────────────────

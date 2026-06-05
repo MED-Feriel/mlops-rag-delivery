@@ -1,0 +1,15 @@
+# Stockage persistant d'Ollama : les modèles téléchargés (gemma3:1b ≈ 1.2 Go)
+# sont conservés dans /root/.ollama → pas de re-pull à chaque redémarrage.
+# 5Gi laisse de la marge pour un second modèle (ex: gemma3:4b ≈ 3.3 Go).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-pvc
+  namespace: rag-livraison
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  # storageClassName: standard

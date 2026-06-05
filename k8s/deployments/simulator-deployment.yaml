@@ -1,0 +1,44 @@
+# Déploiement du simulateur d'événements de livraison (OPTIONNEL).
+#
+# replicas: 0 par défaut → DÉSACTIVÉ : le simulateur écrit dans PostgreSQL et
+# publie sur Kafka, qui ne sont PAS déployés dans ce périmètre (démo PFE). Pour
+# l'activer : déployer Postgres + Kafka, renseigner leurs hôtes/credentials dans
+# le ConfigMap/Secret, puis passer replicas à 1.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: simulator
+  namespace: rag-livraison
+  labels:
+    app: simulator
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: simulator
+  template:
+    metadata:
+      labels:
+        app: simulator
+    spec:
+      imagePullSecrets:
+        - name: ghcr-secret
+      containers:
+        - name: simulator
+          image: ghcr.io/med-feriel/mlops-rag-delivery/simulator:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8090
+          envFrom:
+            - configMapRef:
+                name: rag-config
+            - secretRef:
+                name: rag-secrets
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "512Mi"

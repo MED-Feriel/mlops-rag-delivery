@@ -1,0 +1,87 @@
+# Déploiement d'Ollama (serveur LLM, port 11434), servant Gemma3:1b.
+# En local Ollama tourne sur l'hôte ; en k8s on le conteneurise.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: rag-livraison
+  labels:
+    app: ollama
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate          # un seul writer du PVC modèles (RWO)
+  selector:
+    matchLabels:
+      app: ollama
+  template:
+    metadata:
+      labels:
+        app: ollama
+    spec:
+      initContainers:
+        # Pré-charge gemma3:1b dans le volume SI absent (idempotent).
+        # `ollama pull` exige un serveur en marche → on lance `ollama serve`
+        # en arrière-plan le temps du pull, puis on l'arrête. Le conteneur
+        # principal relancera `ollama serve` avec le modèle déjà sur le PVC.
+        - name: pull-gemma3
+          image: ollama/ollama:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              ollama serve &
+              pid=$!
+              for i in $(seq 1 30); do ollama list >/dev/null 2>&1 && break; sleep 1; done
+              if ollama list | grep -q 'gemma3:1b'; then
+                echo "gemma3:1b déjà dans le volume — skip."
+              else
+                echo "Pull de gemma3:1b..."
+                ollama pull gemma3:1b
+              fi
+              kill "$pid" 2>/dev/null || true
+              wait "$pid" 2>/dev/null || true
+          volumeMounts:
+            - name: ollama-data
+              mountPath: /root/.ollama
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+      containers:
+        - name: ollama
+          # Épingler une version >= 0.6 (support Gemma 3) en prod.
+          image: ollama/ollama:latest
+          ports:
+            - name: http
+              containerPort: 11434
+          resources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+            limits:
+              cpu: "4"
+              memory: "6Gi"
+          # /api/tags répond 200 quand le serveur est prêt.
+          readinessProbe:
+            httpGet:
+              path: /api/tags
+              port: 11434
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: 11434
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          volumeMounts:
+            - name: ollama-data
+              mountPath: /root/.ollama
+      volumes:
+        - name: ollama-data
+          persistentVolumeClaim:
+            claimName: ollama-pvc

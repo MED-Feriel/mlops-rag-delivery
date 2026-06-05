@@ -1,0 +1,14 @@
+# Stockage persistant de Qdrant (la base vectorielle doit survivre aux
+# redémarrages / recreations de pod). 10Gi pour ~168K vecteurs 384d + payloads.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: qdrant-pvc
+  namespace: rag-livraison
+spec:
+  accessModes:
+    - ReadWriteOnce        # 1 seul writer (Qdrant = 1 replica)
+  resources:
+    requests:
+      storage: 10Gi
+  # storageClassName: standard   # décommenter pour forcer une classe précise

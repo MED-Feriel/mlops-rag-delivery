@@ -1,0 +1,28 @@
+# Exposition HTTP externe de l'API via l'Ingress NGINX.
+# Hôte : rag.livraison.local (ajouter dans /etc/hosts → IP de l'ingress).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rag-ingress
+  namespace: rag-livraison
+  annotations:
+    # Réponses LLM longues sur CPU (Gemma3 : ~30s, jusqu'à ~150s en 4b) :
+    # on relève les timeouts proxy (défaut 60s → sinon 504).
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    # Streaming SSE (/query/stream, /chat/stream) : désactiver le buffering
+    # pour que les tokens arrivent au fil de l'eau.
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: rag.livraison.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 8080

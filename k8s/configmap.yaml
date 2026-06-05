@@ -1,0 +1,68 @@
+# Configuration NON sensible de l'API RAG (injectée via envFrom).
+# Les valeurs sensibles (mots de passe, secret JWT) sont dans secrets.yaml.
+#
+# Points vérifiés contre le repo :
+#  - QDRANT_PORT=6333 : port CONTENEUR de Qdrant (le 6335 du docker-compose
+#    n'est que le mapping hôte local "6335:6333"). En cluster on parle en 6333.
+#  - Les hôtes (QDRANT_HOST, OLLAMA_HOST, REDIS_HOST) = noms des Services k8s.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rag-config
+  namespace: rag-livraison
+data:
+  # ── Qdrant (Service "qdrant" sur le port conteneur 6333) ──────────────
+  QDRANT_HOST: "qdrant"
+  QDRANT_PORT: "6333"
+  QDRANT_COLLECTION: "livraison_rag"
+
+  # ── Ollama (Service "ollama") ────────────────────────────────────────
+  OLLAMA_HOST: "ollama"
+  OLLAMA_PORT: "11434"
+  OLLAMA_MODEL: "gemma3:1b"
+  OLLAMA_TIMEOUT: "300"
+
+  # ── Embedding ────────────────────────────────────────────────────────
+  # Chemin où l'initContainer de l'API dépose le modèle (volume partagé).
+  # HF_HUB_OFFLINE=1 : le conteneur principal charge depuis le disque,
+  # sans appel HuggingFace (l'initContainer, lui, télécharge en ligne).
+  EMBEDDING_MODEL: "/app/models/paraphrase-multilingual-MiniLM-L12-v2"
+  EMBEDDING_BATCH_SIZE: "64"
+  HF_HUB_OFFLINE: "1"
+  TRANSFORMERS_OFFLINE: "1"
+
+  # ── MLflow ───────────────────────────────────────────────────────────
+  # MLflow n'est PAS déployé en k8s (hors périmètre démo). On pointe le
+  # tracking vers un store fichier local pour que mlflow.start_run() du
+  # pipeline fonctionne sans serveur. Le Model Registry se dégrade alors
+  # proprement (géré par try/except dans le pipeline → pas de versioning).
+  MLFLOW_TRACKING_URI: "file:///tmp/mlruns"
+
+  # ── PostgreSQL ───────────────────────────────────────────────────────
+  # Non déployé ici (seuls l'ETL/simulateur l'utilisent). Le /health
+  # rapportera postgres=false → statut "degraded", mais l'API reste "ready"
+  # (le HTTP 200 du /health ne dépend pas de Postgres). Le chemin RAG
+  # (Qdrant + Ollama) n'en a pas besoin.
+  POSTGRES_HOST: "postgres"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "livraison"
+  POSTGRES_USER: "postgres"
+
+  # ── Cache Redis ──────────────────────────────────────────────────────
+  # Redis n'est pas déployé dans ce périmètre → caches désactivés (le code
+  # se rabat silencieusement sans cache). Pour les activer : déployer un
+  # Service "redis" puis passer ces deux flags à "true".
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  EMBEDDING_CACHE_ENABLED: "false"
+  ANSWER_CACHE_ENABLED: "false"
+  REDIS_TTL_EMBEDDING_SEC: "3600"
+  REDIS_TTL_ANSWER_SEC: "300"
+
+  # ── Authentification API (JWT) ───────────────────────────────────────
+  # false par défaut pour une démo accessible immédiatement. En PROD :
+  # passer à "true", renseigner JWT_SECRET / AUTH_PASSWORD dans le Secret,
+  # puis obtenir un token via POST /auth/token.
+  AUTH_ENABLED: "false"
+  AUTH_USERNAME: "admin"
+  JWT_EXPIRY_MIN: "60"

@@ -1,0 +1,148 @@
+{
+  "id": null,
+  "uid": "rag_cache_feedback",
+  "title": "RAG — Cache & Feedback",
+  "tags": ["rag", "cache", "feedback"],
+  "timezone": "browser",
+  "schemaVersion": 37,
+  "version": 1,
+  "refresh": "10s",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Cache embeddings — taux de hit",
+      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 0},
+      "targets": [
+        {
+          "expr": "100 * sum(rag_embedding_cache_hits_total) / clamp_min(sum(rag_embedding_cache_hits_total) + sum(rag_embedding_cache_misses_total), 1)",
+          "legendFormat": "hit rate",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "orange", "value": 30},
+              {"color": "green", "value": 60}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Cache réponses — taux de hit",
+      "gridPos": {"h": 6, "w": 6, "x": 6, "y": 0},
+      "targets": [
+        {
+          "expr": "100 * sum(rag_answer_cache_hits_total) / clamp_min(sum(rag_answer_cache_hits_total) + sum(rag_answer_cache_misses_total), 1)",
+          "legendFormat": "hit rate",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "percent", "decimals": 1, "min": 0, "max": 100}
+      }
+    },
+    {
+      "type": "gauge",
+      "title": "Satisfaction (pouce haut / total)",
+      "gridPos": {"h": 6, "w": 6, "x": 12, "y": 0},
+      "targets": [
+        {
+          "expr": "100 * sum(rag_feedback_total{rating=\"up\"}) / clamp_min(sum(rag_feedback_total), 1)",
+          "legendFormat": "satisfaction",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "orange", "value": 50},
+              {"color": "green", "value": 75}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Fallbacks LLM (1h)",
+      "gridPos": {"h": 6, "w": 6, "x": 18, "y": 0},
+      "targets": [
+        {
+          "expr": "sum(increase(rag_llm_fallback_total[1h]))",
+          "legendFormat": "fallbacks",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "orange", "value": 1},
+              {"color": "red", "value": 10}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Cache — hits vs misses (taux/s)",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
+      "targets": [
+        {
+          "expr": "sum(rate(rag_embedding_cache_hits_total[5m]))",
+          "legendFormat": "emb hits/s",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(rag_embedding_cache_misses_total[5m]))",
+          "legendFormat": "emb misses/s",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(rag_answer_cache_hits_total[5m]))",
+          "legendFormat": "ans hits/s",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "ops", "decimals": 3}}
+    },
+    {
+      "type": "piechart",
+      "title": "Feedback par rating",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
+      "targets": [
+        {
+          "expr": "sum(rag_feedback_total) by (rating)",
+          "legendFormat": "{{rating}}",
+          "refId": "A"
+        }
+      ],
+      "options": {"legend": {"displayMode": "list"}}
+    }
+  ],
+  "annotations": {"list": []},
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "timepicker": {"refresh_intervals": ["10s", "30s", "1m", "5m", "15m"]}
+}

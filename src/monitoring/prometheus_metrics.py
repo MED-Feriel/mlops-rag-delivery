@@ -26,6 +26,11 @@ RAG_FEEDBACK_TOTAL = Counter(
     ["rating"],
 )
 
+RAG_LLM_FALLBACK_TOTAL = Counter(
+    "rag_llm_fallback_total",
+    "Réponses servies en fallback extractif (LLM indisponible)",
+)
+
 # Histograms
 RAG_QUERY_DURATION = Histogram(
     "rag_query_duration_seconds", "Durée totale d'une requête RAG"

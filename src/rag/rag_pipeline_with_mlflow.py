@@ -15,11 +15,15 @@ from typing import AsyncGenerator, Optional, Dict, Any
 from datetime import datetime
 
 from src.embeddings.embedder import Embedder
-from src.monitoring.prometheus_metrics import RAG_LLM_LATENCY
+from src.monitoring.prometheus_metrics import (
+    RAG_LLM_FALLBACK_TOTAL,
+    RAG_LLM_LATENCY,
+)
 from src.vector_store.qdrant_client import QdrantVectorStore
 from src.retrieval.retrieval_service import RetrievalService
 from src.llm.llm_with_mlflow import LLMWithMLflow
 from src.rag.context_builder import build_context
+from src.rag.fallback import build_extractive_answer
 from src.rag.guardrails import check_context
 from src.rag.query_rewriter import filter_by_date_range, rewrite_query
 from src.monitoring.model_versioning import ModelVersionManager
@@ -247,16 +251,31 @@ class RAGPipelineWithMLflow:
                     length=len(context),
                 )
 
-                # ÉTAPE 3: GENERATE avec LLMWithMLflow
-                # Note: On passe create_run=False pour utiliser la run courante
-                # et éviter les runs imbriquées
+                # ÉTAPE 3: GENERATE avec LLMWithMLflow (create_run=False → run
+                # courante, pas de run imbriquée).
+                # Résilience C.8 : si le LLM est indisponible (Ollama down /
+                # timeout), on ne renvoie pas une 500 — on construit une réponse
+                # extractive à partir des passages (pas de génération → pas
+                # d'hallucination), tracée par un tag + la métrique fallback.
                 start_generate = time.time()
-                result = await self.llm.generate(context, question, create_run=False)
+                try:
+                    result = await self.llm.generate(
+                        context, question, create_run=False
+                    )
+                    answer = result["response"]
+                    llm_latency = result["latency_ms"]
+                    RAG_LLM_LATENCY.observe(llm_latency / 1000.0)
+                    llm_mode = "llm"
+                except Exception as llm_err:
+                    log.error(
+                        f"[RAG-MLflow] LLM indisponible → fallback extractif: {llm_err}"
+                    )
+                    answer = build_extractive_answer(question, chunks)
+                    llm_latency = 0.0
+                    llm_mode = "fallback_extractive"
+                    RAG_LLM_FALLBACK_TOTAL.inc()
+                    mlflow.set_tag("llm_fallback", "extractive")
                 generate_time = (time.time() - start_generate) * 1000
-
-                answer = result["response"]
-                llm_latency = result["latency_ms"]
-                RAG_LLM_LATENCY.observe(llm_latency / 1000.0)
 
                 mlflow.log_metrics(
                     {
@@ -471,13 +490,24 @@ class RAGPipelineWithMLflow:
                         },
                     }
 
-                # GENERATE CHAT (passer create_run=False)
+                # GENERATE CHAT (create_run=False). Même fallback C.8 que query().
                 start_generate = time.time()
-                result = await self.llm.chat(messages, context, create_run=False)
+                try:
+                    result = await self.llm.chat(
+                        messages, context, create_run=False
+                    )
+                    answer = result["response"]
+                    llm_latency = result["latency_ms"]
+                except Exception as llm_err:
+                    log.error(
+                        f"[RAG-MLflow] LLM indisponible (chat) → fallback: {llm_err}"
+                    )
+                    last_q = messages[-1]["content"] if messages else ""
+                    answer = build_extractive_answer(last_q, chunks)
+                    llm_latency = 0.0
+                    RAG_LLM_FALLBACK_TOTAL.inc()
+                    mlflow.set_tag("llm_fallback", "extractive")
                 generate_time = (time.time() - start_generate) * 1000
-
-                answer = result["response"]
-                llm_latency = result["latency_ms"]
 
                 mlflow.log_metrics(
                     {

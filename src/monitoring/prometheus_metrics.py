@@ -14,6 +14,12 @@ RAG_QUERY_TOTAL = Counter(
     ["status", "zone_filter"],
 )
 
+RAG_QUERY_FAMILY_TOTAL = Counter(
+    "rag_query_family_total",
+    "Nombre de requêtes par famille d'intent (F1/F2/F3/F4 ou générique)",
+    ["famille"],
+)
+
 # Histograms
 RAG_QUERY_DURATION = Histogram(
     "rag_query_duration_seconds", "Durée totale d'une requête RAG"

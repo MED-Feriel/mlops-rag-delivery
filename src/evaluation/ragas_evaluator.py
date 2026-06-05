@@ -75,9 +75,9 @@ class RAGASEvaluator:
                 data["ground_truth"].append(q.get("ground_truth", ""))
 
                 if (i + 1) % 5 == 0:
-                    log.info("[RAGAS] Progression: {i+1}/{len(questions)}")
-            except Exception:
-                log.error("[RAGAS] Erreur pour question {i}: {e}")
+                    log.info(f"[RAGAS] Progression: {i+1}/{len(questions)}")
+            except Exception as e:
+                log.error(f"[RAGAS] Erreur pour question {i}: {e}")
                 continue
 
         log.info("[RAGAS] Dataset construit", nb_samples=len(data["question"]))
@@ -141,8 +141,8 @@ class RAGASEvaluator:
 
             return scores
 
-        except Exception:
-            log.error("[RAGAS] Erreur evaluate_and_log: {e}", exc_info=True)
+        except Exception as e:
+            log.error(f"[RAGAS] Erreur evaluate_and_log: {e}", exc_info=True)
             raise
 
     def _save_eval_artifacts(self, results, dataset, scores: Dict[str, float]) -> None:
@@ -186,8 +186,8 @@ class RAGASEvaluator:
 
             log.info("[RAGAS] Artifacts sauvegardés", artifact_dir=str(artifact_dir))
 
-        except Exception:
-            log.warning("[RAGAS] Erreur save_artifacts (non-bloquant): {e}")
+        except Exception as e:
+            log.warning(f"[RAGAS] Erreur save_artifacts (non-bloquant): {e}")
 
     def compare_runs(
         self, metric: str = "faithfulness", top_n: int = 10
@@ -227,6 +227,6 @@ class RAGASEvaluator:
 
             return comparison
 
-        except Exception:
-            log.error("[RAGAS] Erreur compare_runs: {e}")
+        except Exception as e:
+            log.error(f"[RAGAS] Erreur compare_runs: {e}")
             return pd.DataFrame()

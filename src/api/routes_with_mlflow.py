@@ -95,8 +95,8 @@ async def query(
 
         log.info(
             "[API] Query OK",
-            chunks=result["metrics"]["chunks_retrieved"],
-            total_time_ms=result["metrics"]["total_time_ms"],
+            chunks=result["metrics"].get("chunks_retrieved"),
+            total_time_ms=result["metrics"].get("total_time_ms"),
         )
 
         return response
@@ -195,8 +195,8 @@ async def chat(
 
         log.info(
             "[API] Chat OK",
-            chunks=result["metrics"]["chunks_retrieved"],
-            total_time_ms=result["metrics"]["total_time_ms"],
+            chunks=result["metrics"].get("chunks_retrieved"),
+            total_time_ms=result["metrics"].get("total_time_ms"),
         )
 
         return response

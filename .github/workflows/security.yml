@@ -1,0 +1,65 @@
+# Scan de sécurité conteneurs & dépendances (Trivy) — MLOPS-119.
+# Workflow séparé du ci.yml pour ne pas bloquer le build sur des CVE base-image
+# non corrigeables, tout en appliquant un policy gate strict (0 CRITICAL).
+name: Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 3 * * 1"   # lundi 03:00 UTC (re-scan hebdo des CVE)
+
+permissions:
+  contents: read
+  security-events: write   # upload SARIF vers l'onglet Security
+
+jobs:
+  trivy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 1) Scan du système de fichiers (deps Python, IaC, secrets).
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          severity: "CRITICAL,HIGH"
+          exit-code: "1"
+          ignore-unfixed: true
+
+      # 2) Build de l'image API puis scan de l'image.
+      - name: Build API image
+        run: docker build -t rag-api:scan -f docker/api/Dockerfile .
+
+      - name: Trivy image scan (SARIF)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "rag-api:scan"
+          format: "sarif"
+          output: "trivy-results.sarif"
+          severity: "CRITICAL,HIGH"
+
+      - name: Upload SARIF to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: "trivy-results.sarif"
+
+      # 3) Policy gate : 0 CRITICAL toléré, au plus 3 HIGH.
+      - name: Install Trivy CLI
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b /usr/local/bin v0.49.0
+
+      - name: Security policy gate
+        run: |
+          count() { trivy image --quiet --severity "$1" --format json rag-api:scan \
+            | jq '[.Results[].Vulnerabilities // []] | add | length'; }
+          CRIT=$(count CRITICAL); HIGH=$(count HIGH)
+          echo "CRITICAL=$CRIT  HIGH=$HIGH"
+          if [ "$CRIT" -gt 0 ]; then echo "❌ $CRIT vuln CRITICAL (tolérance 0)"; exit 1; fi
+          if [ "$HIGH" -gt 3 ]; then echo "❌ $HIGH vuln HIGH (> 3)"; exit 1; fi
+          echo "✅ Policy gate OK"

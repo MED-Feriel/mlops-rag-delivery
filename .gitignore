@@ -11,6 +11,15 @@ build/
 .env
 *.env
 .env.local
+.env.*.local
+
+# Secrets / clés / certificats (MLOPS-118)
+*.key
+*.pem
+*.p12
+secrets/
+*.secret
+credentials*.json
 
 # Données & Modèles
 data/raw/

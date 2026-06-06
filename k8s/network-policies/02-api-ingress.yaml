@@ -1,0 +1,25 @@
+# L'API n'accepte d'ingress QUE depuis l'Ingress NGINX, sur 8080.
+#
+# ⚠️ Probes kubelet : selon le CNI, les sondes liveness/readiness (issues du
+# nœud) peuvent être bloquées par le deny-by-default. Si les pods restent
+# NotReady, autoriser l'IP du nœud / le CIDR des nœuds sur 8080 (voir
+# docs/network-architecture.md).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-ingress
+  namespace: rag-livraison
+spec:
+  podSelector:
+    matchLabels:
+      app: rag-api
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080

@@ -1,0 +1,23 @@
+# Autorise la résolution DNS (kube-dns) en egress pour TOUS les pods.
+# Indispensable avec le deny-by-default : sans DNS, plus aucune résolution de nom
+# de Service ne fonctionne. Policy partagée → on ne répète pas la règle ailleurs.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: rag-livraison
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

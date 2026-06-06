@@ -27,3 +27,12 @@ groups:
         annotations:
           summary: "Score contexte Qdrant < 0.25 — qualité retrieval dégradée"
           description: "Le score moyen des documents récupérés est trop faible, la qualité du contexte peut être mauvaise."
+
+      - alert: MLflowProductionModelUnhealthy
+        expr: mlflow_production_model_healthy == 0
+        for: 5m
+        labels:
+          severity: P0
+        annotations:
+          summary: "Modèle MLflow en production non sain"
+          description: "La version marquée 'Production' dans MLflow ne répond pas ou l'API n'est pas accessible."

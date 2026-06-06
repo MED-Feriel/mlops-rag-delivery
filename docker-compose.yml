@@ -124,12 +124,14 @@ services:
       OLLAMA_HOST: host.docker.internal
       MLFLOW_TRACKING_URI: http://mlflow:5000
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      PUSHGATEWAY_URL: http://pushgateway:9091
+      API_URL: http://api:8080
       PYTHONPATH: /opt/airflow:/opt/airflow/src
       _AIRFLOW_DB_MIGRATE: 'true'
       _AIRFLOW_WWW_USER_CREATE: 'true'
       _AIRFLOW_WWW_USER_USERNAME: admin
       _AIRFLOW_WWW_USER_PASSWORD: admin
-      _PIP_ADDITIONAL_REQUIREMENTS: "--extra-index-url https://download.pytorch.org/whl/cpu torch==2.2.0+cpu asyncpg==0.29.0 confluent-kafka==2.3.0 structlog==24.1.0 mlflow==2.10.0 sentence-transformers==2.5.1 qdrant-client==1.7.3 pydantic-settings==2.2.1"
+      _PIP_ADDITIONAL_REQUIREMENTS: "--extra-index-url https://download.pytorch.org/whl/cpu torch==2.2.0+cpu asyncpg==0.29.0 confluent-kafka==2.3.0 structlog==24.1.0 mlflow==2.10.0 sentence-transformers==2.5.1 qdrant-client==1.7.3 pydantic-settings==2.2.1 prometheus-client==0.19.0"
     ports: ["8081:8080"]
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -159,6 +161,11 @@ services:
       - ./prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml
     command:
       - "--config.file=/etc/alertmanager/alertmanager.yml"
+    networks: [rag-network]
+
+  pushgateway:
+    image: prom/pushgateway:latest
+    ports: ["9091:9091"]
     networks: [rag-network]
 
   # Métriques d'infrastructure des conteneurs (CPU/mémoire/réseau) — MLOPS dash #3.

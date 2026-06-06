@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from functools import lru_cache
 
 
@@ -49,9 +50,31 @@ class Settings(BaseSettings):
     # Jeton de service (service-to-service) — utilisé par Open WebUI comme
     # OPENAI_API_KEY quand l'auth est activée. Vide = désactivé.
     api_service_token: str = ""
+    # ── RBAC + rate limiting + CORS (MLOPS-117) ──────────────────────────
+    admin_username: str = "admin"
+    admin_password: str = "admin"
+    readonly_username: str = "reader"
+    readonly_password: str = "reader"
+    # Clés API service-à-service : {clé: {"name": ..., "roles": [...]}}.
+    # Via env : API_KEYS='{"rag_xxx":{"name":"svc","roles":["service"]}}'.
+    api_keys: dict = {}
+    # Origines CORS autorisées (liste, ou CSV en env). Éviter "*" en prod.
+    cors_origins: list = ["*"]
+    # Limites de débit par minute, par rôle (par identité, pas par IP).
+    rate_limit_user: int = 60
+    rate_limit_admin: int = 300
+    rate_limit_service: int = 500
     logstash_host: str = "localhost"
     logstash_port: int = 5044
     ragas_metrics: list = ["faithfulness", "answer_relevancy", "context_precision"]
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _split_csv(cls, v):
+        """Accepte une liste OU une chaîne CSV (ex: env CORS_ORIGINS=a,b)."""
+        if isinstance(v, str):
+            return [o.strip() for o in v.split(",") if o.strip()]
+        return v
 
     @property
     def postgres_url(self) -> str:

@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from src.api.auth import get_current_principal
+from src.api.auth import require_roles
 from src.rag.rag_pipeline import RAGPipeline
 from config.settings import get_settings
 
@@ -121,7 +121,7 @@ async def _stream(
 @router.post("/v1/chat/completions")
 async def chat_completions(
     req: ChatCompletionRequest,
-    principal: str = Depends(get_current_principal),
+    principal=Depends(require_roles("user", "admin", "service")),
 ):
     if not any(m.role == "user" for m in req.messages):
         raise HTTPException(status_code=400, detail="aucun message utilisateur")

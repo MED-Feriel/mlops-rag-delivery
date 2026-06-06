@@ -12,7 +12,7 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from src.api.auth import get_current_principal
+from src.api.auth import require_roles
 from src.api.feedback_store import FeedbackStore
 from src.api.models import FeedbackRequest, QueryRequest, QueryResponse
 from src.monitoring.prometheus_metrics import (
@@ -57,7 +57,8 @@ def _get_feedback_store() -> FeedbackStore | None:
 
 @router.post("/query", response_model=QueryResponse)
 async def query(
-    req: QueryRequest, principal: str = Depends(get_current_principal)
+    req: QueryRequest,
+    principal=Depends(require_roles("user", "admin", "service")),
 ) -> QueryResponse:
     """
     Requête RAG simple.
@@ -117,7 +118,7 @@ async def query(
 
 @router.post("/query/stream")
 async def query_stream(
-    req: QueryRequest, principal: str = Depends(get_current_principal)
+    req: QueryRequest, principal=Depends(require_roles("user", "admin"))
 ) -> StreamingResponse:
     """
     Requête RAG avec streaming.
@@ -149,7 +150,7 @@ async def query_stream(
 
 @router.post("/chat", response_model=QueryResponse)
 async def chat(
-    req: QueryRequest, principal: str = Depends(get_current_principal)
+    req: QueryRequest, principal=Depends(require_roles("user", "admin"))
 ) -> QueryResponse:
     """
     Chat RAG avec historique.
@@ -211,7 +212,7 @@ async def chat(
 
 
 @router.get("/cache/stats")
-async def cache_stats() -> dict:
+async def cache_stats(principal=Depends(require_roles("admin", "service"))) -> dict:
     """Statistiques des caches Redis : embeddings (B.1) et réponses (B.2)."""
     pipeline = _get_pipeline()
     retriever = pipeline.retriever
@@ -245,7 +246,7 @@ async def cache_stats() -> dict:
 
 
 @router.delete("/cache/flush")
-async def cache_flush() -> dict:
+async def cache_flush(principal=Depends(require_roles("admin"))) -> dict:
     """Vide le cache Redis (utile après mise à jour du modèle d'embedding)."""
     retriever = _get_pipeline().retriever
     if not getattr(retriever, "cache_enabled", False):
@@ -255,7 +256,9 @@ async def cache_flush() -> dict:
 
 
 @router.delete("/cache/invalidate")
-async def cache_invalidate(query: str) -> dict:
+async def cache_invalidate(
+    query: str, principal=Depends(require_roles("admin"))
+) -> dict:
     """Invalide l'entrée de cache d'une seule question (invalidation ciblée).
 
     Contrairement à ``/cache/flush`` (purge totale), n'enlève que le vecteur
@@ -275,7 +278,8 @@ async def cache_invalidate(query: str) -> dict:
 
 @router.post("/feedback")
 async def submit_feedback(
-    req: FeedbackRequest, principal: str = Depends(get_current_principal)
+    req: FeedbackRequest,
+    principal=Depends(require_roles("user", "admin", "service")),
 ) -> dict:
     """Enregistre un feedback 👍/👎 sur une réponse RAG.
 
@@ -305,7 +309,9 @@ async def submit_feedback(
 
 
 @router.get("/feedback/stats")
-async def feedback_stats() -> dict:
+async def feedback_stats(
+    principal=Depends(require_roles("admin", "service")),
+) -> dict:
     """Compteurs 👍/👎, taux de satisfaction et derniers feedbacks reçus."""
     store = _get_feedback_store()
     if store is None:
@@ -315,7 +321,7 @@ async def feedback_stats() -> dict:
 
 @router.post("/chat/stream")
 async def chat_stream(
-    req: QueryRequest, principal: str = Depends(get_current_principal)
+    req: QueryRequest, principal=Depends(require_roles("user", "admin"))
 ) -> StreamingResponse:
     """Chat RAG avec streaming."""
     try:

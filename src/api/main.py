@@ -7,11 +7,19 @@ from datetime import datetime, timezone
 
 import httpx
 import structlog
-from fastapi import FastAPI, Response
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from config.settings import get_settings
-from src.api.auth import router as auth_router
+from src.api.audit import log_api_access
+from src.api.auth import (
+    create_api_key,
+    list_api_keys,
+    require_roles,
+    revoke_api_key,
+    router as auth_router,
+)
 from src.api.models import CollectionStats, HealthResponse
 from src.api.openai_compat import router as openai_router
 from src.api.routes_with_mlflow import router
@@ -31,7 +39,9 @@ app = FastAPI(
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    # Origines depuis settings (CORS_ORIGINS) — éviter "*" en production.
+    allow_origins=get_settings().cors_origins,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -43,6 +53,61 @@ log.info(
     "[API] Routes intégrées (MLflow + auth)",
     auth_enabled=get_settings().auth_enabled,
 )
+
+
+# ─── Audit logging (MLOPS-117) ──────────────────────────────────────────────
+@app.middleware("http")
+async def audit_middleware(request: Request, call_next):
+    """Journalise chaque accès API (sauf /health* et /metrics, trop bruyants)."""
+    response = await call_next(request)
+    path = request.url.path
+    if path != "/metrics" and not path.startswith("/health"):
+        principal = getattr(request.state, "principal", None)
+        log_api_access(
+            request=request,
+            user_id=getattr(principal, "id", "anonymous"),
+            action=request.method,
+            resource=path,
+            status_code=response.status_code,
+        )
+    return response
+
+
+# ─── Gestion des clés API (admin) — MLOPS-117 ───────────────────────────────
+class ApiKeyCreate(BaseModel):
+    name: str
+    roles: list[str] = ["service"]
+
+
+@app.post("/auth/api-key")
+async def create_api_key_endpoint(
+    body: ApiKeyCreate, principal=Depends(require_roles("admin"))
+) -> dict:
+    """Génère une nouvelle clé API (admin uniquement)."""
+    key, rec = create_api_key(body.name, body.roles)
+    return {
+        "api_key": key,
+        "id": rec["id"],
+        "name": rec["name"],
+        "roles": rec["roles"],
+        "note": "Conservez cette clé : elle n'est affichée qu'une seule fois.",
+    }
+
+
+@app.get("/auth/api-keys")
+async def list_api_keys_endpoint(principal=Depends(require_roles("admin"))) -> dict:
+    """Liste les clés API (sans exposer le secret), admin uniquement."""
+    return {"api_keys": list_api_keys(get_settings())}
+
+
+@app.delete("/auth/api-keys/{key_id}")
+async def revoke_api_key_endpoint(
+    key_id: str, principal=Depends(require_roles("admin"))
+) -> dict:
+    """Révoque une clé API par son id (admin uniquement)."""
+    if not revoke_api_key(key_id):
+        raise HTTPException(status_code=404, detail="Clé introuvable ou déjà révoquée")
+    return {"revoked": True, "id": key_id}
 
 
 # ─── Métriques Prometheus (best-effort) ────────────────────────────────────
@@ -264,7 +329,9 @@ async def data_drift(
 
 
 @app.get("/collections/stats", response_model=CollectionStats)
-async def collection_stats() -> CollectionStats:
+async def collection_stats(
+    principal=Depends(require_roles("admin", "service")),
+) -> CollectionStats:
     s = get_settings()
     async with httpx.AsyncClient(timeout=5) as c:
         r = await c.get(

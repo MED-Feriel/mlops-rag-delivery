@@ -59,7 +59,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "dfmgn6l4qxtz4a"
+        "uid": "prometheus"
       },
       "targets": [
         {
@@ -96,7 +96,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "dfmgn6l4qxtz4a"
+        "uid": "prometheus"
       },
       "targets": [
         {
@@ -148,7 +148,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "dfmgn6l4qxtz4a"
+        "uid": "prometheus"
       },
       "targets": [
         {
@@ -198,7 +198,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "dfmgn6l4qxtz4a"
+        "uid": "prometheus"
       },
       "targets": [
         {
@@ -235,7 +235,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "dfmgn6l4qxtz4a"
+        "uid": "prometheus"
       },
       "targets": [
         {
@@ -277,7 +277,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "dfmgn6l4qxtz4a"
+        "uid": "prometheus"
       },
       "targets": [
         {
@@ -336,7 +336,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "dfmgn6l4qxtz4a"
+        "uid": "prometheus"
       },
       "targets": [
         {
@@ -406,7 +406,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "dfmgn6l4qxtz4a"
+        "uid": "prometheus"
       },
       "targets": [
         {
@@ -487,7 +487,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "dfmgn6l4qxtz4a"
+        "uid": "prometheus"
       },
       "targets": [
         {
@@ -537,7 +537,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "dfmgn6l4qxtz4a"
+        "uid": "prometheus"
       },
       "targets": [
         {
@@ -572,7 +572,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "dfmgn6l4qxtz4a"
+        "uid": "prometheus"
       },
       "targets": [
         {
@@ -609,7 +609,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "dfmgn6l4qxtz4a"
+        "uid": "prometheus"
       },
       "targets": [
         {
@@ -671,7 +671,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "dfmgn6l4qxtz4a"
+        "uid": "prometheus"
       },
       "targets": [
         {
@@ -718,7 +718,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "dfmgn6l4qxtz4a"
+        "uid": "prometheus"
       },
       "targets": [
         {
@@ -802,7 +802,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "dfmgn6l4qxtz4a"
+        "uid": "prometheus"
       },
       "targets": [
         {
@@ -866,7 +866,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "dfmgn6l4qxtz4a"
+        "uid": "prometheus"
       },
       "targets": [
         {
@@ -912,7 +912,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "dfmgn6l4qxtz4a"
+        "uid": "prometheus"
       },
       "targets": [
         {
@@ -958,7 +958,7 @@
       },
       "datasource": {
         "type": "prometheus",
-        "uid": "dfmgn6l4qxtz4a"
+        "uid": "prometheus"
       },
       "targets": [
         {

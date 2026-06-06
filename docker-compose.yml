@@ -161,6 +161,19 @@ services:
       - "--config.file=/etc/alertmanager/alertmanager.yml"
     networks: [rag-network]
 
+  # Métriques d'infrastructure des conteneurs (CPU/mémoire/réseau) — MLOPS dash #3.
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    ports: ["8082:8080"]
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks: [rag-network]
+
   grafana:
     image: grafana/grafana:latest
     depends_on: [prometheus]
@@ -207,10 +220,12 @@ services:
     ports: ["3001:8080"]
     environment:
       OPENAI_API_BASE_URL: http://api:8080/v1
-      OPENAI_API_KEY: not-required
+      # Jeton de service envoyé comme clé OpenAI → accepté par l'API (rôle
+      # "service") quand AUTH_ENABLED=true. Vide si l'auth est désactivée.
+      OPENAI_API_KEY: ${API_SERVICE_TOKEN:-not-required}
       WEBUI_AUTH: "false"
       ENABLE_OLLAMA_API: "false"
-      DEFAULT_MODELS: "rag-livraison"
+      DEFAULT_MODELS: "Assistant Intelligent"
       ENABLE_RAG_WEB_SEARCH: "false"
       ENABLE_RAG_HYBRID_SEARCH: "false"
       RAG_EMBEDDING_ENGINE: "openai"

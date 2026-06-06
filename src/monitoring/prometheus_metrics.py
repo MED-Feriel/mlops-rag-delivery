@@ -48,6 +48,13 @@ RAG_DATA_DRIFT_PSI = Gauge(
     ["field"],
 )
 
+# État des dépendances backend (1=up, 0=down) pour le dashboard "Santé backend".
+RAG_DEPENDENCY_UP = Gauge(
+    "rag_dependency_up",
+    "Disponibilité des dépendances backend (1=up, 0=down)",
+    ["dependency"],
+)
+
 # Histograms
 RAG_QUERY_DURATION = Histogram(
     "rag_query_duration_seconds", "Durée totale d'une requête RAG"

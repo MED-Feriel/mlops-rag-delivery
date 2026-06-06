@@ -46,7 +46,7 @@ async def list_models() -> dict:
         "object": "list",
         "data": [
             {
-                "id": "rag-livraison",
+                "id": "Assistant Intelligent",
                 "object": "model",
                 "created": int(time.time()),
                 "owned_by": "mlops-rag-delivery",

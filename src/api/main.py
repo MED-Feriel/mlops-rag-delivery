@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import socket
 import time
 from datetime import datetime, timezone
 
@@ -28,7 +30,7 @@ from src.api.routes_with_mlflow import router
 # Sans cet import, /metrics peut ne pas exposer certains histogrammes/gauges
 # si le pipeline n'a pas encore été invoqué.
 import src.monitoring.prometheus_metrics  # noqa: F401
-from src.monitoring.prometheus_metrics import RAG_DATA_DRIFT_PSI
+from src.monitoring.prometheus_metrics import RAG_DATA_DRIFT_PSI, RAG_DEPENDENCY_UP
 
 log = structlog.get_logger()
 
@@ -163,6 +165,52 @@ def _check_postgres(s) -> bool:
         return True
     except Exception:
         return False
+
+
+def _check_elasticsearch() -> bool:
+    try:
+        r = httpx.get("http://elasticsearch:9200", timeout=3)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+
+def _check_kafka() -> bool:
+    try:
+        host, _, port = get_settings().kafka_bootstrap_servers.partition(":")
+        with socket.create_connection((host, int(port or 9092)), timeout=3):
+            return True
+    except Exception:
+        return False
+
+
+@app.on_event("startup")
+async def _dependency_health_loop() -> None:
+    """Met à jour rag_dependency_up{dependency} toutes les 20s (boucle de fond).
+
+    Lu par Prometheus via /metrics → dashboard 'Santé backend'. Les checks
+    synchrones tournent dans un thread (asyncio.to_thread) pour ne pas bloquer
+    la boucle d'événements.
+    """
+
+    async def loop() -> None:
+        while True:
+            s = get_settings()
+            try:
+                checks = {
+                    "qdrant": await _check_qdrant(s),
+                    "ollama": await _check_ollama(s),
+                    "postgres": await asyncio.to_thread(_check_postgres, s),
+                    "elasticsearch": await asyncio.to_thread(_check_elasticsearch),
+                    "kafka": await asyncio.to_thread(_check_kafka),
+                }
+                for dep, ok in checks.items():
+                    RAG_DEPENDENCY_UP.labels(dependency=dep).set(1.0 if ok else 0.0)
+            except Exception:  # la boucle ne doit jamais mourir
+                pass
+            await asyncio.sleep(20)
+
+    asyncio.create_task(loop())
 
 
 @app.get("/health", response_model=HealthResponse)

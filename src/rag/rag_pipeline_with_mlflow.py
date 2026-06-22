@@ -142,9 +142,7 @@ class RAGPipelineWithMLflow:
         # Version du prompt (C.5) — loggée à chaque run, indépendamment du
         # Registry, pour corréler qualité et version de prompt.
         mlflow.set_tag("prompt_version", PROMPT_VERSION)
-        mlflow.log_params(
-            {"prompt_version": PROMPT_VERSION, "prompt_sha": PROMPT_SHA}
-        )
+        mlflow.log_params({"prompt_version": PROMPT_VERSION, "prompt_sha": PROMPT_SHA})
         info = self._model_version_info
         if not info:
             mlflow.set_tag("model_registry_status", "unregistered")
@@ -545,9 +543,7 @@ class RAGPipelineWithMLflow:
                 # GENERATE CHAT (create_run=False). Même fallback C.8 que query().
                 start_generate = time.time()
                 try:
-                    result = await self.llm.chat(
-                        messages, context, create_run=False
-                    )
+                    result = await self.llm.chat(messages, context, create_run=False)
                     answer = result["response"]
                     llm_latency = result["latency_ms"]
                 except Exception as llm_err:

@@ -8,7 +8,6 @@ Alerte : P0 si modèle injoignable pendant 5 min.
 """
 
 import os
-import json
 import logging
 from datetime import datetime
 
@@ -25,6 +24,7 @@ MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
 API_URL = os.getenv("API_URL", "http://api:8080")
 PUSHGATEWAY_URL = os.getenv("PUSHGATEWAY_URL", "http://pushgateway:9091")
 MODEL_NAME = "rag-llm-model"
+
 
 def get_production_version():
     """
@@ -46,10 +46,12 @@ def get_production_version():
         for v in latest_versions:
             if v.get("current_stage") == "Production":
                 production_version = v.get("version")
-                logger.info(f"✓ MLflow: Version Production trouvée: {production_version}")
+                logger.info(
+                    f"✓ MLflow: Version Production trouvée: {production_version}"
+                )
                 return production_version, "Production"
 
-        logger.warning(f"⚠ MLflow: Aucune version en stage 'Production'")
+        logger.warning("⚠ MLflow: Aucune version en stage 'Production'")
         return None, None
 
     except requests.exceptions.RequestException as e:
@@ -70,12 +72,7 @@ def test_model_api(version=None):
     try:
         url = f"{API_URL}/v1/chat/completions"
         payload = {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": "Dis OK"
-                }
-            ],
+            "messages": [{"role": "user", "content": "Dis OK"}],
             "model": "Assistant Intelligent",
             "temperature": 0.1,
         }

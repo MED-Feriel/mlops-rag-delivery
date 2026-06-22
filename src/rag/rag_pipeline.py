@@ -117,12 +117,14 @@ class RAGPipeline:
             yield token
 
     @staticmethod
-    def _build_embedding_query(messages: list[dict], history_window: int = 3) -> str:
+    def _build_embedding_query(messages: list[dict], history_window: int = 1) -> str:
         """Construit la requête d'embedding à partir des derniers messages user.
 
-        Permet de résoudre les références implicites comme « ces retards » :
-        on concatène les N derniers messages user pour que la recherche
-        vectorielle voie le contexte conversationnel.
+        Par défaut on n'utilise que la DERNIÈRE question (history_window=1) :
+        concaténer plusieurs questions distinctes (« restaurants ? » puis
+        « zones ? ») contaminait la recherche vectorielle et faisait répondre
+        l'assistant sur le mauvais sujet. Pour résoudre un suivi court avec
+        référence implicite (« et pour ces retards ? »), augmenter la fenêtre.
         """
         user_msgs = [m["content"] for m in messages if m.get("role") == "user"]
         recent = user_msgs[-history_window:]
@@ -142,7 +144,11 @@ class RAGPipeline:
         ok, refus = check_context(context)
         if not ok:
             return {"answer": refus, "contexts": chunks}
-        answer = await self.llm.chat(messages=messages, context=context)
+        # Génération mono-tour sur la DERNIÈRE question : passer tout l'historique
+        # au petit modèle le contamine (il répète la réponse précédente sur une
+        # nouvelle question). On répond donc indépendamment à chaque question,
+        # même dans un même chat.
+        answer = await self.llm.generate(context=context, question=embedding_query)
         return {"answer": answer, "contexts": chunks}
 
     async def chat_stream(
@@ -160,5 +166,7 @@ class RAGPipeline:
         if not ok:
             yield refus
             return
-        async for token in self.llm.chat_stream(messages=messages, context=context):
+        # Mono-tour sur la dernière question (cf. chat()) : évite la contamination
+        # de l'historique avec un petit modèle.
+        async for token in self.llm.stream(context=context, question=embedding_query):
             yield token

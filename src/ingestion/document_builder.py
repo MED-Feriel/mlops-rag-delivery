@@ -471,7 +471,7 @@ def doc_kafka_event(row: dict) -> tuple[str, str, dict] | None:
     criticite = row.get("severite") or (
         "haute" if (row.get("retard_min") or 0) > 30 else "moyenne"
     )
-    doc_id = f"kafka-{row.get('_topic','x')}-{row.get('_partition',0)}-{row.get('_offset','?')}"
+    doc_id = f"kafka-{row.get('_topic', 'x')}-{row.get('_partition', 0)}-{row.get('_offset', '?')}"
     meta = {
         "source": "kafka",
         "topic": row.get("_topic", "kafka"),
@@ -495,30 +495,11 @@ def build_documents(
     texts: list[str] = []
     metas: list[dict] = []
 
-    # Documents par ligne
-    per_row_builders = [
-        ("incidents_actifs", doc_incident),
-        ("avis_clients", doc_avis),
-        ("commandes", doc_commande),
-        ("restaurants", doc_restaurant),
-        ("livreurs", doc_livreur),
-        ("zones", doc_zone),
-    ]
-    for key, fn in per_row_builders:
-        for row in extract_result.get(key, []):
-            doc_id, text, meta = fn(row)
-            ids.append(doc_id)
-            texts.append(text)
-            metas.append(meta)
-
-    # Événements Kafka temps-réel
-    for row in extract_result.get("kafka_events", []):
-        result = doc_kafka_event(row)
-        if result:
-            doc_id, text, meta = result
-            ids.append(doc_id)
-            texts.append(text)
-            metas.append(meta)
+    # NB: ordre d'assemblage = ordre d'embedding/upsert. On indexe les documents
+    # AGRÉGÉS + le référentiel (petits, critiques pour les familles F1/F4) EN
+    # PREMIER, puis les corpus volumineux incidents/avis. Le corpus final est
+    # identique quel que soit l'ordre, mais ainsi un ETL interrompu conserve les
+    # docs de synthèse essentiels (robustesse).
 
     # Documents agrégés (un seul doc par synthèse, contient toute l'info)
     aggregate_builders = [
@@ -546,5 +527,30 @@ def build_documents(
         ids.append(doc_id)
         texts.append(text)
         metas.append(meta)
+
+    # Documents par ligne : référentiel (petit) d'abord, volumineux en dernier.
+    per_row_builders = [
+        ("restaurants", doc_restaurant),
+        ("livreurs", doc_livreur),
+        ("zones", doc_zone),
+        ("commandes", doc_commande),
+        ("incidents_actifs", doc_incident),
+        ("avis_clients", doc_avis),
+    ]
+    for key, fn in per_row_builders:
+        for row in extract_result.get(key, []):
+            doc_id, text, meta = fn(row)
+            ids.append(doc_id)
+            texts.append(text)
+            metas.append(meta)
+
+    # Événements Kafka temps-réel
+    for row in extract_result.get("kafka_events", []):
+        result = doc_kafka_event(row)
+        if result:
+            doc_id, text, meta = result
+            ids.append(doc_id)
+            texts.append(text)
+            metas.append(meta)
 
     return ids, texts, metas

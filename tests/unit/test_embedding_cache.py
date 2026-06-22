@@ -1,7 +1,5 @@
 """Tests unitaires du cache Redis d'embeddings (fake Redis en mémoire)."""
 
-import json
-
 from src.embeddings.embedding_cache import EmbeddingCache
 
 

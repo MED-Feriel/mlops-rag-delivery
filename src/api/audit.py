@@ -36,7 +36,11 @@ def log_api_access(
             action=action,
             resource=resource,
             status_code=status_code,
-            user_agent=request.headers.get("user-agent", "") if hasattr(request, "headers") else "",
+            user_agent=(
+                request.headers.get("user-agent", "")
+                if hasattr(request, "headers")
+                else ""
+            ),
             details=details or {},
         )
     except Exception:  # l'audit ne doit jamais casser une requête

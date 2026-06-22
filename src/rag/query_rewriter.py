@@ -316,11 +316,17 @@ def rewrite_query(query: str) -> dict:
         qdrant_filters["zone"] = zone
         matched["zone"] = zone
 
-    # Intention de synthèse/diagnostic (F4) → on laisse remonter les docs agrégés
-    # (synthese-*) en n'appliquant PAS le filtre type_event qui les exclurait.
+    # Intention de synthèse/diagnostic (F1 superlatifs / F4) → on cible la source
+    # agrégée. Indispensable sur le corpus complet : les ~19 docs `synthese` (qui
+    # contiennent les classements et diagnostics) se noient sinon parmi les 74K
+    # avis_clients / 92K incidents, et le modèle répond à partir d'un avis isolé.
+    # On n'applique pas ce filtre aux entités métier (resto/livreur) ni aux
+    # familles 2/3 temps réel (déjà routées vers leur source).
     is_synthese = bool(re.search(_SYNTHESE_PATTERN, q_lower))
     if is_synthese:
         matched["synthese"] = True
+        if not famille and not metier_entity:
+            qdrant_filters["source"] = "synthese"
 
     # type_event ne s'applique pas aux sources temps réel (ES/Prometheus), aux
     # requêtes ciblant une entité métier (resto/livreur), ni aux synthèses.

@@ -358,9 +358,11 @@ async def data_drift(
             "n_sampled": len(points),
             "baseline_set": saved,
             "distribution": current,
-            "note": "baseline (re)fixée"
-            if saved
-            else "Redis indisponible — baseline non persistée",
+            "note": (
+                "baseline (re)fixée"
+                if saved
+                else "Redis indisponible — baseline non persistée"
+            ),
         }
 
     psi = population_stability_index(baseline, current)

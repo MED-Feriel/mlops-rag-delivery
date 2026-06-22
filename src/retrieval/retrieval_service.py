@@ -49,9 +49,7 @@ class RetrievalService:
         # (rétro-compatible avec les appelants qui ne passent pas settings).
         self.cache = None
         self.cache_enabled = False
-        if settings is not None and getattr(
-            settings, "embedding_cache_enabled", False
-        ):
+        if settings is not None and getattr(settings, "embedding_cache_enabled", False):
             self.cache = self._build_cache(settings)
             self.cache_enabled = self.cache is not None
 
@@ -184,9 +182,7 @@ class RetrievalService:
             range(len(pool)), key=lambda i: bm25_scores[i], reverse=True
         )
 
-        fused = reciprocal_rank_fusion(
-            [dense_ranking, sparse_ranking], rrf_k=RRF_K
-        )
+        fused = reciprocal_rank_fusion([dense_ranking, sparse_ranking], rrf_k=RRF_K)
         order = sorted(fused, key=lambda i: fused[i], reverse=True)
 
         result: list[dict] = []

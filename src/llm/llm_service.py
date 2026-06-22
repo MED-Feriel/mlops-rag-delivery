@@ -6,70 +6,27 @@ import json
 from typing import AsyncGenerator
 import structlog
 
+from src.rag.prompt_builder import SYSTEM_PROMPT, build_prompt
+
 log = structlog.get_logger()
 
-SYSTEM_PROMPT = """Tu es « RAG-Livraison », assistant de supervision opérationnelle
-d'une plateforme de livraison de repas en Algérie. Tu réponds en français, de
-façon concise et factuelle.
-
-RÈGLE FONDAMENTALE : tu ne te bases QUE sur le CONTEXTE fourni ci-dessous.
-Le contexte est une liste de passages au format :
-    [Doc N | source=<source> | score=<score>]
-    <texte du document>
-
-Le champ `source` indique la provenance et donc le TYPE d'information :
-- prometheus      → MÉTRIQUES SYSTÈME temps réel (taux succès, latences,
-                    services up, score contexte) — un instantané daté.
-- elasticsearch   → LOGS applicatifs récents (erreurs/warnings de services :
-                    tracking-service, payment-service…), avec service et heure.
-- incidents       → incidents métier (retard, restaurant fermé, livreur bloqué…).
-- commandes / restaurants / livreurs / zones / avis_clients → DONNÉES MÉTIER.
-- synthese        → agrégats et classements Top-N déjà calculés.
-
-RÈGLES STRICTES (anti-hallucination) :
-1. N'invente JAMAIS un chiffre, un nom, un service, une métrique ou un log
-   absent du contexte. Si l'info n'y est pas, dis-le explicitement.
-2. Si le CONTEXTE est vide ou ne contient pas l'information demandée, réponds
-   exactement : « Information non disponible dans le contexte fourni. » puis,
-   si utile, suggère de consulter Kibana (logs) ou Grafana (métriques).
-3. Cite la provenance : « D'après les métriques Prometheus… », « Les logs
-   montrent… », « Selon les données métier… ».
-4. MÉTRIQUES : recopie la valeur EXACTE du contexte et précise l'heure du
-   snapshot. Une valeur « N/A » signifie non disponible → ne la remplace pas
-   par un chiffre inventé.
-   ÉTAT DES SERVICES : si le contexte contient une ligne « services: nom=up,
-   nom=down… » ou la phrase « Aucun service en panne », UTILISE-la directement
-   pour répondre (liste les services en panne, ou indique qu'aucun ne l'est).
-   N'invente un statut que si cette information est absente du contexte.
-5. JAMAIS de réponse en un seul mot : ne réponds JAMAIS par un simple « Oui »
-   ou « Non ». Toute affirmation DOIT être suivie de la liste des éléments
-   concrets du contexte qui la justifient (numéro, zone, restaurant, valeur,
-   heure). S'il y a plusieurs éléments pertinents, énumère-les un par ligne.
-6. COMMANDE vs INCIDENT : un document « Incident #X … sur la commande #Y »
-   décrit un incident (#X) survenu sur une commande (#Y). Si la question porte
-   sur les COMMANDES, cite le numéro de commande #Y ; si elle porte sur les
-   incidents, cite #X. Ne confonds jamais ces deux numéros.
-7. LOGS : précise toujours le service et l'heure de chaque erreur citée.
-8. CLASSEMENTS : cite l'élément n°1 en premier ; recopie nom ET chiffres de la
-   MÊME ligne, sans les mélanger.
-9. Ne mélange pas les sources : n'attribue pas à un « log » une valeur qui vient
-   d'une métrique Prometheus, et inversement.
-10. Unités : délais en minutes, montants en DZD, latences en secondes.
-11. PAS DE DOUBLON : ne cite jamais deux fois le même numéro, nom de restaurant
-    ou élément dans une liste. Si plusieurs documents concernent la même
-    commande ou le même restaurant, regroupe-les en une seule ligne.
-
-Le paiement (payment-service, paiements) fait partie du périmètre : tu peux en
-parler UNIQUEMENT s'il figure dans le contexte, jamais de mémoire.
-"""
-
-
-# Versioning du prompt système (C.5) : la version est incrémentée à la main à
-# chaque évolution des règles ; le SHA est dérivé du texte pour détecter toute
-# dérive non versionnée. Loggé dans MLflow à chaque run → on corrèle qualité de
-# réponse et version de prompt, et on expose le tout via /prompt/version.
-PROMPT_VERSION = "v1.1"
+# SYSTEM_PROMPT est désormais importé de src.rag.prompt_builder (source unique).
+# Versioning du prompt (C.5) — bumpé à v2.0 : prompt factuel/concis/sans
+# présentation. Le SHA est dérivé du texte ; loggé dans MLflow et exposé via
+# /prompt/version.
+PROMPT_VERSION = "v2.0"
 PROMPT_SHA = hashlib.sha256(SYSTEM_PROMPT.encode("utf-8")).hexdigest()[:12]
+
+# Paramètres d'inférence Ollama — source unique pour generate/chat/stream.
+# Température basse (factuel, anti-invention), repeat_penalty (anti-répétition),
+# num_predict (concision), stop tokens (coupe la sur-génération).
+INFERENCE_OPTIONS = {
+    "temperature": 0.1,
+    "top_p": 0.85,
+    "repeat_penalty": 1.15,
+    "num_predict": 256,
+    "stop": ["<|eot_id|>", "\n\n\n"],
+}
 
 
 def _format_history(messages: list[dict]) -> str:
@@ -93,21 +50,29 @@ class LLMService:
         self.base_url = f"http://{host}:{port}"
         self.model = model
         self.timeout = timeout
+        log.info(
+            "[LLM] init",
+            model=model,
+            prompt_version=PROMPT_VERSION,
+            temperature=INFERENCE_OPTIONS["temperature"],
+            num_predict=INFERENCE_OPTIONS["num_predict"],
+        )
 
     def _build_prompt(self, context: str, question: str) -> str:
-        return f"{SYSTEM_PROMPT}\n\nCONTEXTE :\n{context}\n\nQUESTION : {question}\n\nRÉPONSE :"
+        # Délègue au builder unique (prompt_builder.build_prompt) — prompt
+        # factuel/concis avec balises <contexte>/<question>.
+        return build_prompt(context, question)
 
     def _build_chat_prompt(self, messages: list[dict], context: str) -> str:
         last = messages[-1]["content"] if messages else ""
         history = _format_history(messages)
-        history_block = (
-            f"\n\nHISTORIQUE DE CONVERSATION :\n{history}" if history else ""
-        )
+        hist_block = f"\n<historique>\n{history}\n</historique>\n" if history else ""
         return (
             f"{SYSTEM_PROMPT}\n\n"
-            f"CONTEXTE :\n{context}"
-            f"{history_block}\n\n"
-            f"QUESTION ACTUELLE : {last}\n\nRÉPONSE :"
+            f"<contexte>\n{context}\n</contexte>\n"
+            f"{hist_block}\n"
+            f"<question>\n{last}\n</question>\n\n"
+            f"<Réponse (concise, factuelle, sans présentation)>"
         )
 
     async def generate(self, context: str, question: str) -> str:
@@ -118,7 +83,7 @@ class LLMService:
                     "model": self.model,
                     "prompt": self._build_prompt(context, question),
                     "stream": False,
-                    "options": {"temperature": 0.0, "top_p": 0.9, "num_predict": 512},
+                    "options": INFERENCE_OPTIONS,
                 },
             )
             r.raise_for_status()
@@ -137,7 +102,7 @@ class LLMService:
                     "model": self.model,
                     "prompt": self._build_chat_prompt(messages, context),
                     "stream": False,
-                    "options": {"temperature": 0.0, "top_p": 0.9, "num_predict": 512},
+                    "options": INFERENCE_OPTIONS,
                 },
             )
             r.raise_for_status()
@@ -159,13 +124,8 @@ class LLMService:
                     "model": self.model,
                     "prompt": prompt,
                     "stream": True,
-                    # Mêmes options que generate()/chat() pour que le rendu
-                    # streaming (Open WebUI) soit cohérent avec le non-streaming.
-                    "options": {
-                        "temperature": 0.0,
-                        "top_p": 0.9,
-                        "num_predict": 512,
-                    },
+                    # Mêmes options que generate()/chat() (cohérence streaming).
+                    "options": INFERENCE_OPTIONS,
                 },
             ) as response:
                 async for line in response.aiter_lines():

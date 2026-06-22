@@ -11,7 +11,7 @@ import os
 import httpx
 import pytest
 
-QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
+QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6335")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 API_URL = os.getenv("API_URL", "http://localhost:8080")
 
@@ -69,3 +69,27 @@ def test_api_health_returns_expected_schema(require_api):
 def test_api_metrics_endpoint(require_api):
     r = httpx.get(f"{API_URL}/metrics", timeout=5)
     assert r.status_code == 200
+
+
+PROMETHEUS_URL = os.getenv("PROMETHEUS_URL", "http://localhost:9090")
+REDIS_URL = os.getenv("REDIS_URL", "http://localhost:6379")
+
+
+@pytest.fixture(scope="module")
+def require_prometheus():
+    if not _alive(PROMETHEUS_URL, "/-/healthy"):
+        pytest.skip("Prometheus indisponible")
+
+
+def test_prometheus_healthy(require_prometheus):
+    r = httpx.get(f"{PROMETHEUS_URL}/-/healthy", timeout=3)
+    assert r.status_code == 200
+    assert "Healthy" in r.text
+
+
+def test_api_v1_models_endpoint(require_api):
+    r = httpx.get(f"{API_URL}/v1/models", timeout=5)
+    assert r.status_code == 200
+    body = r.json()
+    assert body.get("object") == "list"
+    assert len(body.get("data", [])) >= 1

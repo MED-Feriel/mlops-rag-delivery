@@ -99,9 +99,7 @@ def revoke_api_key(key_id: str) -> bool:
 
 
 # ── JWT ──────────────────────────────────────────────────────────────────
-def create_access_token(
-    subject: str, roles: list[str], settings: Settings
-) -> str:
+def create_access_token(subject: str, roles: list[str], settings: Settings) -> str:
     """Crée un JWT signé HS256 avec ``sub``, ``roles`` et expiration."""
     now = int(time.time())
     payload = {
@@ -114,9 +112,7 @@ def create_access_token(
 
 
 def _decode_token(token: str, settings: Settings) -> dict:
-    return jwt.decode(
-        token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
-    )
+    return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
 
 
 def _users(settings: Settings) -> dict[str, dict]:
@@ -162,7 +158,9 @@ async def get_current_principal(
         rec = verify_api_key(api_key, settings)
         if not rec:
             raise _unauthorized("Clé API invalide")
-        principal = Principal(rec.get("name", "api-key"), "service", rec.get("roles", ["service"]))
+        principal = Principal(
+            rec.get("name", "api-key"), "service", rec.get("roles", ["service"])
+        )
         request.state.principal = principal
         return principal
 

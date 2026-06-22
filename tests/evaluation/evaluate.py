@@ -43,9 +43,7 @@ def is_relevant(doc: dict, question: dict) -> bool:
     if source_attendue:
         return doc.get("metadata", {}).get("source") == source_attendue
     text = doc.get("text", "").lower()
-    return any(
-        ent.lower() in text for ent in question.get("entites_attendues", [])
-    )
+    return any(ent.lower() in text for ent in question.get("entites_attendues", []))
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -128,9 +126,7 @@ def aggregate(results: dict) -> dict:
     metrics = ("top1_accuracy", "mrr", "precision@k", "recall@k")
 
     def agg(subset: list[dict]) -> dict:
-        return {m: _mean([r[m] for r in subset]) for m in metrics} | {
-            "n": len(subset)
-        }
+        return {m: _mean([r[m] for r in subset]) for m in metrics} | {"n": len(subset)}
 
     by_family: dict[str, dict] = {}
     for fam in sorted({r["famille"] for r in rows}):
@@ -164,8 +160,14 @@ def generate_report(results: dict, summary: dict) -> str:
     return "\n".join(lines)
 
 
-def _build_retrieve_fn(use_hybrid: bool) -> RetrieveFn:
-    """Construit la fonction de retrieval réelle depuis la config du projet."""
+def _build_retrieve_fn(use_hybrid: bool, use_rewriter: bool = False) -> RetrieveFn:
+    """Construit la fonction de retrieval réelle depuis la config du projet.
+
+    Si ``use_rewriter`` est vrai, on applique le Query Rewriter (détection
+    d'intent → filtres Qdrant de source/zone) avant le retrieval, comme le fait
+    le pipeline RAG en production. Cela mesure le retrieval tel qu'utilisé par
+    l'assistant, et non le retrieval brut.
+    """
     from config.settings import get_settings
     from src.embeddings.embedder import Embedder
     from src.retrieval.retrieval_service import RetrievalService
@@ -178,6 +180,17 @@ def _build_retrieve_fn(use_hybrid: bool) -> RetrieveFn:
     )
     service = RetrievalService(embedder, store)
     method = service.retrieve_hybrid if use_hybrid else service.retrieve
+
+    if use_rewriter:
+        from src.rag.query_rewriter import rewrite_query
+
+        def _retrieve_with_rewriter(question: str, top_k: int) -> list[dict]:
+            rw = rewrite_query(question)
+            filters = rw.get("qdrant_filters") or None
+            return method(question, top_k=top_k, filters=filters)
+
+        return _retrieve_with_rewriter
+
     return lambda question, top_k: method(question, top_k=top_k)
 
 
@@ -189,10 +202,17 @@ def main() -> None:
         action="store_true",
         help="Utiliser le dense pur au lieu du hybride (BM25+RRF)",
     )
+    parser.add_argument(
+        "--rewriter",
+        action="store_true",
+        help="Appliquer le Query Rewriter (filtres d'intent) avant le retrieval",
+    )
     args = parser.parse_args()
 
     questions = load_questions()
-    retrieve_fn = _build_retrieve_fn(use_hybrid=not args.dense)
+    retrieve_fn = _build_retrieve_fn(
+        use_hybrid=not args.dense, use_rewriter=args.rewriter
+    )
     results = evaluate_retrieval(questions, retrieve_fn, top_k=args.top_k)
     summary = aggregate(results)
     print(generate_report(results, summary))

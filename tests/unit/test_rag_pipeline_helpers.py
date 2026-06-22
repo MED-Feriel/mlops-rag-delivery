@@ -120,13 +120,15 @@ async def test_stream_yields_tokens_from_llm():
 @pytest.mark.asyncio
 async def test_chat_stream_yields_tokens():
     pipeline, mock_ret, mock_llm = _make_pipeline_with_mocks()
-    mock_llm.chat_stream = MagicMock(return_value=_async_iter(["tok1", "tok2"]))
+    # Mono-tour : chat_stream délègue à llm.stream sur la dernière question.
+    mock_llm.stream = MagicMock(return_value=_async_iter(["tok1", "tok2"]))
 
     msgs = [{"role": "user", "content": "q"}]
     tokens = []
     async for tok in pipeline.chat_stream(msgs, top_k=2):
         tokens.append(tok)
     assert tokens == ["tok1", "tok2"]
+    mock_ret.retrieve_hybrid.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -138,9 +140,11 @@ async def test_chat_uses_embedding_query_built_from_messages():
         {"role": "user", "content": "Suite ?"},
     ]
     out = await pipeline.chat(msgs, top_k=3)
-    assert out["answer"] == "Chat mockée"
-    # La requête d'embedding doit contenir les messages user
+    # Mono-tour : chat() répond via llm.generate sur la dernière question.
+    assert out["answer"] == "Réponse mockée"
+    # La requête d'embedding ne garde que la dernière question user (fenêtre=1),
+    # ni l'historique user antérieur ni les messages assistant.
     embedding_query = mock_ret.retrieve_hybrid.call_args.args[0]
-    assert "Première question" in embedding_query
     assert "Suite ?" in embedding_query
+    assert "Première question" not in embedding_query
     assert "réponse" not in embedding_query

@@ -11,12 +11,7 @@ Appelé dans le pipeline après ``build_context`` : si ``check_context`` renvoie
 from __future__ import annotations
 
 # Réponse de secours alignée sur la règle n°2 du SYSTEM_PROMPT.
-REFUS_CONTEXTE_VIDE = (
-    "Information non disponible dans le contexte fourni. "
-    "Aucun document pertinent n'a été récupéré pour cette question. "
-    "Reformulez-la, ou consultez directement Kibana (logs) "
-    "ou Grafana (métriques) pour le détail."
-)
+REFUS_CONTEXTE_VIDE = "Information non disponible dans les données actuelles."
 
 
 def check_context(context: str) -> tuple[bool, str]:

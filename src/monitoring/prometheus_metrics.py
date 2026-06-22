@@ -48,6 +48,11 @@ RAG_ACTIVE_REQUESTS = Gauge(
     "Nombre de requêtes RAG actives en cours",
 )
 
+RAG_TOP1_SCORE = Gauge(
+    "rag_top1_score",
+    "Score du meilleur document récupéré (top-1)",
+)
+
 
 def extract_zone_filter(filters: dict | None) -> str:
     """Extraire une étiquette zone_filter simple depuis les filtres Qdrant."""

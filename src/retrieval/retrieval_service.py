@@ -60,7 +60,7 @@ class RetrievalService:
         if filtered:
             average_score = sum(r.get("score", 0.0) for r in filtered) / len(filtered)
             RAG_CONTEXT_SCORE_AVG.set(average_score)
-            RAG_TOP1_SCORE.observe(float(filtered[0].get("score", 0.0)))
+            RAG_TOP1_SCORE.set(float(filtered[0].get("score", 0.0)))
 
         return filtered
 

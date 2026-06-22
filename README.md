@@ -2,7 +2,6 @@
 
 ![CI](https://github.com/MED-Feriel/mlops-rag-delivery/actions/workflows/ci.yml/badge.svg)
 ![CD](https://github.com/MED-Feriel/mlops-rag-delivery/actions/workflows/cd.yml/badge.svg)
-![Model Validation](https://github.com/MED-Feriel/mlops-rag-delivery/actions/workflows/model_validation.yml/badge.svg)
 
 Système RAG (Retrieval-Augmented Generation) pour la supervision
 d'une plateforme de livraison de repas. Projet de Fin d'Études —

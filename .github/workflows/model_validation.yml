@@ -1,17 +1,12 @@
 name: Model Validation (RAGAS)
 
+# Déclenchement manuel uniquement : RAGAS nécessite un Qdrant peuplé et un LLM
+# (Ollama) joignables, indisponibles sur les runners GitHub-hosted. Les
+# déclencheurs schedule/pull_request produisaient donc des échecs systématiques.
+# À lancer manuellement (ou rebrancher schedule/pull_request) quand une infra
+# d'évaluation est câblée via secrets (QDRANT_HOST, endpoint LLM…).
 on:
-  schedule:
-    - cron: "0 3 * * *"
   workflow_dispatch:
-  pull_request:
-    branches: [main]
-    paths:
-      - "src/rag/**"
-      - "src/retrieval/**"
-      - "src/llm/**"
-      - "src/embeddings/**"
-      - "scripts/run_ragas_eval.py"
 
 permissions:
   contents: read
@@ -39,7 +34,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Lowercase repository name
         id: repo

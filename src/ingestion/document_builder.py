@@ -362,7 +362,7 @@ def doc_kafka_event(row: dict) -> tuple[str, str, dict] | None:
     criticite = row.get("severite") or (
         "haute" if (row.get("retard_min") or 0) > 30 else "moyenne"
     )
-    doc_id = f"kafka-{row.get('_topic','x')}-{row.get('_partition',0)}-{row.get('_offset','?')}"
+    doc_id = f"kafka-{row.get('_topic', 'x')}-{row.get('_partition', 0)}-{row.get('_offset', '?')}"
     meta = {
         "source": "kafka",
         "topic": row.get("_topic", "kafka"),

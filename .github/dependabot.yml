@@ -1,0 +1,42 @@
+# Dependabot — mises à jour automatiques (sécurité + versions) — MLOPS-119.
+version: 2
+updates:
+  # Dépendances Python de l'API.
+  - package-ecosystem: "pip"
+    directory: "/docker/api"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    labels: ["dependencies", "security"]
+    commit-message:
+      prefix: "deps"
+
+  # Dépendances Python de l'ETL.
+  - package-ecosystem: "pip"
+    directory: "/docker/etl"
+    schedule:
+      interval: "weekly"
+    labels: ["dependencies", "security"]
+    commit-message:
+      prefix: "deps"
+
+  # Images de base Docker (api, simulator, etl).
+  - package-ecosystem: "docker"
+    directory: "/docker/api"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "docker"
+    directory: "/docker/simulator"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "docker"
+    directory: "/docker/etl"
+    schedule:
+      interval: "weekly"
+
+  # Actions GitHub utilisées par les workflows.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

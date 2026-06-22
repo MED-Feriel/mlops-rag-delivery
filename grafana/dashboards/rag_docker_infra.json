@@ -1,0 +1,90 @@
+{
+  "id": null,
+  "uid": "rag_docker_infra",
+  "title": "RAG — Infrastructure Docker (cAdvisor)",
+  "tags": ["rag", "infra", "docker"],
+  "timezone": "browser",
+  "schemaVersion": 37,
+  "version": 2,
+  "refresh": "10s",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Mémoire totale — tous les conteneurs Docker",
+      "description": "id=/docker : somme RAM de tous les conteneurs actifs (Docker Desktop / WSL2 n'expose pas les cgroups individuels).",
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "expr": "container_memory_usage_bytes{id=\"/docker\"}",
+        "legendFormat": "RAM Docker total",
+        "refId": "A"
+      }],
+      "fieldConfig": {"defaults": {"unit": "bytes", "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 8589934592}, {"color": "red", "value": 17179869184}]}}},
+      "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}}
+    },
+    {
+      "type": "stat",
+      "title": "CPU — taux d'utilisation Docker (rate 5m)",
+      "description": "Dérivée sur 5 min de container_cpu_usage_seconds_total pour id=/docker.",
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "expr": "sum(rate(container_cpu_usage_seconds_total{id=\"/docker\"}[5m]))",
+        "legendFormat": "CPU cores/s",
+        "refId": "A"
+      }],
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 3}},
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}}
+    },
+    {
+      "type": "stat",
+      "title": "Réseau reçu (B/s) — interface host",
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "expr": "sum(rate(container_network_receive_bytes_total{id=\"/\"}[5m]))",
+        "legendFormat": "Reçu B/s",
+        "refId": "A"
+      }],
+      "fieldConfig": {"defaults": {"unit": "Bps"}},
+      "options": {"colorMode": "value", "graphMode": "area", "reduceOptions": {"calcs": ["lastNotNull"]}}
+    },
+    {
+      "type": "timeseries",
+      "title": "Mémoire Docker — évolution (total + restricted)",
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 6},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "container_memory_usage_bytes{id=\"/docker\"}", "legendFormat": "/docker (tous conteneurs)", "refId": "A"},
+        {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "container_memory_usage_bytes{id=\"/restricted\"}", "legendFormat": "/restricted", "refId": "B"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "bytes"}}
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU Docker — usage (rate 1m)",
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 6},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum(rate(container_cpu_usage_seconds_total{id=\"/docker\"}[1m]))", "legendFormat": "/docker total", "refId": "A"},
+        {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum(rate(container_cpu_usage_seconds_total{id=\"/restricted\"}[1m]))", "legendFormat": "/restricted", "refId": "B"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 3}}
+    },
+    {
+      "type": "text",
+      "title": "Note plateforme",
+      "gridPos": {"h": 3, "w": 24, "x": 0, "y": 15},
+      "options": {
+        "mode": "markdown",
+        "content": "ℹ️ **Docker Desktop / WSL2** : cAdvisor n'expose que les cgroups racine (`/docker`, `/restricted`) — pas les métriques par conteneur individuel. Sur un hôte Linux natif, le dashboard afficherait un graphe par conteneur (api, qdrant, ollama…). Les métriques ci-dessus représentent la **consommation totale** de l'ensemble du stack Docker."
+      }
+    }
+  ],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {}
+}

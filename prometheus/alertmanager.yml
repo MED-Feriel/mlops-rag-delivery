@@ -1,0 +1,42 @@
+# Configuration Alertmanager — routage des alertes Prometheus (alerts.yml).
+#
+# Le receiver « default » n'a volontairement aucun notifieur configuré
+# (blackhole) : les alertes sont groupées et visibles dans l'UI Alertmanager
+# (http://localhost:9093) mais non poussées. Pour notifier réellement en prod,
+# décommenter et renseigner email_configs / slack_configs / webhook_configs
+# (mettre les secrets en variables d'environnement, pas en clair ici).
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: 'default'
+  group_by: ['alertname', 'severity']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 3h
+  routes:
+    # Les alertes critiques sont répétées plus souvent.
+    - match:
+        severity: critical
+      receiver: 'default'
+      repeat_interval: 1h
+
+receivers:
+  - name: 'default'
+    # webhook_configs:
+    #   - url: 'http://service-interne/alertes'
+    # email_configs:
+    #   - to: 'ops@entreprise.dz'
+    #     from: 'alertmanager@entreprise.dz'
+    #     smarthost: 'smtp.entreprise.dz:587'
+    #     auth_username: 'alertmanager@entreprise.dz'
+    #     auth_password: '<SECRET_EN_ENV>'
+
+# Une alerte critique inhibe les warnings de même alertname (anti-spam).
+inhibit_rules:
+  - source_match:
+      severity: critical
+    target_match:
+      severity: warning
+    equal: ['alertname']

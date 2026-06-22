@@ -1,0 +1,55 @@
+{
+  "id": null,
+  "uid": "rag_qdrant_detail",
+  "title": "RAG — Qdrant (détaillé)",
+  "tags": ["rag", "qdrant", "vector-store"],
+  "timezone": "browser",
+  "schemaVersion": 37,
+  "version": 1,
+  "refresh": "10s",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Vecteurs indexés (collection_points)",
+      "gridPos": {"h": 7, "w": 8, "x": 0, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum(collection_points)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 0, "color": {"mode": "fixed", "fixedColor": "purple"}}}
+    },
+    {
+      "type": "stat",
+      "title": "Optimisations en cours",
+      "gridPos": {"h": 7, "w": 8, "x": 8, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum(collection_running_optimizations)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 0}}
+    },
+    {
+      "type": "stat",
+      "title": "File d'updates en attente",
+      "gridPos": {"h": 7, "w": 8, "x": 16, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum(collection_update_queue_length)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "short", "decimals": 0}}
+    },
+    {
+      "type": "timeseries",
+      "title": "Conso CPU matérielle Qdrant (collection_hardware_metric_cpu)",
+      "gridPos": {"h": 8, "w": 16, "x": 0, "y": 7},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum(collection_hardware_metric_cpu)", "legendFormat": "cpu", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "short"}}
+    },
+    {
+      "type": "table",
+      "title": "Version Qdrant (app_info)",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 7},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "app_info", "format": "table", "instant": true, "refId": "A"}],
+      "transformations": [{"id": "organize", "options": {"excludeByName": {"Time": true, "Value": true, "__name__": true, "instance": true, "job": true}}}]
+    }
+  ],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {}
+}

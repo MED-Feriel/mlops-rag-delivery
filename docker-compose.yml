@@ -9,6 +9,8 @@ volumes:
   mlflow_data:
   airflow_logs:
   open_webui_data:
+  redis_data:
+  hf_cache:
 
 services:
 
@@ -57,7 +59,6 @@ services:
     image: qdrant/qdrant:latest
     ports:
       - "6335:6333"
-      - "6336:6334"
     volumes: [qdrant_data:/qdrant/storage]
     networks: [rag-network]
 
@@ -123,12 +124,14 @@ services:
       OLLAMA_HOST: host.docker.internal
       MLFLOW_TRACKING_URI: http://mlflow:5000
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      PUSHGATEWAY_URL: http://pushgateway:9091
+      API_URL: http://api:8080
       PYTHONPATH: /opt/airflow:/opt/airflow/src
       _AIRFLOW_DB_MIGRATE: 'true'
       _AIRFLOW_WWW_USER_CREATE: 'true'
       _AIRFLOW_WWW_USER_USERNAME: admin
       _AIRFLOW_WWW_USER_PASSWORD: admin
-      _PIP_ADDITIONAL_REQUIREMENTS: "--extra-index-url https://download.pytorch.org/whl/cpu torch==2.2.0+cpu asyncpg==0.29.0 confluent-kafka==2.3.0 structlog==24.1.0 mlflow==2.10.0 sentence-transformers==2.5.1 qdrant-client==1.7.3 pydantic-settings==2.2.1"
+      _PIP_ADDITIONAL_REQUIREMENTS: "--extra-index-url https://download.pytorch.org/whl/cpu torch==2.2.0+cpu asyncpg==0.29.0 confluent-kafka==2.3.0 structlog==24.1.0 mlflow==2.10.0 sentence-transformers==2.5.1 qdrant-client==1.7.3 pydantic-settings==2.2.1 prometheus-client==0.19.0"
     ports: ["8081:8080"]
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -136,14 +139,46 @@ services:
       - ./dags:/opt/airflow/dags
       - ./src:/opt/airflow/src
       - ./config:/opt/airflow/config
+      - ./scripts:/opt/airflow/scripts
       - airflow_logs:/opt/airflow/logs
     networks: [rag-network]
 
   prometheus:
     image: prom/prometheus:latest
+    depends_on: [alertmanager]
     ports: ["9090:9090"]
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      # alerts.yml était référencé par rule_files mais jamais monté → règles
+      # absentes dans le conteneur. On le monte explicitement.
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml
+    networks: [rag-network]
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    ports: ["9093:9093"]
+    volumes:
+      - ./prometheus/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+    networks: [rag-network]
+
+  pushgateway:
+    image: prom/pushgateway:latest
+    ports: ["9091:9091"]
+    networks: [rag-network]
+
+  # Métriques d'infrastructure des conteneurs (CPU/mémoire/réseau) — MLOPS dash #3.
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    ports: ["8082:8080"]
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
     networks: [rag-network]
 
   grafana:
@@ -170,16 +205,34 @@ services:
       - ./src/simulator:/app/simulator
     networks: [rag-network]
 
+  redis:
+    image: redis:7.2-alpine
+    ports: ["6379:6379"]
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - redis_data:/data
+    networks: [rag-network]
+
   open-webui:
     image: ghcr.io/open-webui/open-webui:main
     depends_on: [api]
     ports: ["3001:8080"]
     environment:
       OPENAI_API_BASE_URL: http://api:8080/v1
-      OPENAI_API_KEY: not-required
+      # Jeton de service envoyé comme clé OpenAI → accepté par l'API (rôle
+      # "service") quand AUTH_ENABLED=true. Vide si l'auth est désactivée.
+      OPENAI_API_KEY: ${API_SERVICE_TOKEN:-not-required}
       WEBUI_AUTH: "false"
       ENABLE_OLLAMA_API: "false"
-      DEFAULT_MODELS: "rag-livraison"
+      DEFAULT_MODELS: "Assistant Intelligent"
       ENABLE_RAG_WEB_SEARCH: "false"
       ENABLE_RAG_HYBRID_SEARCH: "false"
       RAG_EMBEDDING_ENGINE: "openai"
@@ -198,11 +251,17 @@ services:
       dockerfile: docker/api/Dockerfile
     depends_on:
       qdrant: { condition: service_started }
+      redis: { condition: service_started }
     env_file: .env
     ports: ["8080:8080"]
     volumes:
       - ./src:/app/src
       - ./config:/app/config
+      # Modèle d'embedding pré-téléchargé localement → chargement disque, zéro
+      # appel HuggingFace (robuste si HF lent/throttlé, portable pour la VM).
+      - ./models:/app/models:ro
+      # Cache HF résiduel persistant (au cas où un autre modèle serait chargé).
+      - hf_cache:/home/apiuser/.cache/huggingface
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks: [rag-network]

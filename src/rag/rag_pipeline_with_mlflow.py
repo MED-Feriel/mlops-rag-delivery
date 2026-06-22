@@ -15,11 +15,18 @@ from typing import AsyncGenerator, Optional, Dict, Any
 from datetime import datetime
 
 from src.embeddings.embedder import Embedder
-from src.monitoring.prometheus_metrics import RAG_LLM_LATENCY
+from src.monitoring.prometheus_metrics import (
+    RAG_ANSWER_CACHE_HITS,
+    RAG_ANSWER_CACHE_MISSES,
+    RAG_LLM_FALLBACK_TOTAL,
+    RAG_LLM_LATENCY,
+)
 from src.vector_store.qdrant_client import QdrantVectorStore
 from src.retrieval.retrieval_service import RetrievalService
 from src.llm.llm_with_mlflow import LLMWithMLflow
+from src.llm.llm_service import PROMPT_SHA, PROMPT_VERSION
 from src.rag.context_builder import build_context
+from src.rag.fallback import build_extractive_answer
 from src.rag.guardrails import check_context
 from src.rag.query_rewriter import filter_by_date_range, rewrite_query
 from src.monitoring.model_versioning import ModelVersionManager
@@ -49,7 +56,15 @@ class RAGPipelineWithMLflow:
             port=settings.qdrant_port,
             collection=settings.qdrant_collection,
         )
-        self.retriever = RetrievalService(self.embedder, self.vector_store)
+        self.retriever = RetrievalService(
+            self.embedder, self.vector_store, settings=settings
+        )
+
+        # B.2 — cache de réponses optionnel (OFF par défaut ; staleness temps
+        # réel). Si activé mais Redis indisponible → None (fallback transparent).
+        self.answer_cache = None
+        if getattr(settings, "answer_cache_enabled", False):
+            self.answer_cache = self._build_answer_cache(settings)
 
         # LLM avec MLflow
         self.llm = LLMWithMLflow(
@@ -87,6 +102,29 @@ class RAGPipelineWithMLflow:
 
         log.info("[RAG-MLflow] Pipeline initialisé")
 
+    @staticmethod
+    def _build_answer_cache(settings):
+        """Construit le cache de réponses Redis, fallback silencieux si KO."""
+        try:
+            import redis
+
+            from src.rag.answer_cache import AnswerCache
+
+            client = redis.Redis(
+                host=settings.redis_host,
+                port=settings.redis_port,
+                socket_connect_timeout=2,
+                socket_timeout=2,
+                decode_responses=False,
+            )
+            client.ping()
+            ttl = getattr(settings, "redis_ttl_answer_sec", 300)
+            log.info("Cache de réponses activé", ttl=ttl)
+            return AnswerCache(client, ttl_sec=ttl)
+        except Exception as e:
+            log.warning("Cache de réponses indisponible — désactivé", error=str(e))
+            return None
+
     def reload_model_version(self) -> Optional[Dict[str, Any]]:
         """Recharger la version Production depuis le Registry (post-promotion)."""
         if not self.version_manager:
@@ -101,6 +139,10 @@ class RAGPipelineWithMLflow:
 
     def _log_model_version_tags(self) -> None:
         """Logger les tags/params identifiant la version du modèle servie."""
+        # Version du prompt (C.5) — loggée à chaque run, indépendamment du
+        # Registry, pour corréler qualité et version de prompt.
+        mlflow.set_tag("prompt_version", PROMPT_VERSION)
+        mlflow.log_params({"prompt_version": PROMPT_VERSION, "prompt_sha": PROMPT_SHA})
         info = self._model_version_info
         if not info:
             mlflow.set_tag("model_registry_status", "unregistered")
@@ -168,6 +210,16 @@ class RAGPipelineWithMLflow:
         Returns:
             {"answer": str, "contexts": list, "metrics": dict}
         """
+        # B.2 — cache de réponses (optionnel, OFF par défaut). Hit → retour
+        # immédiat sans retrieve/LLM ni run MLflow. TTL court (staleness).
+        if self.answer_cache is not None:
+            cached = self.answer_cache.get(question, top_k, filters)
+            if cached is not None:
+                RAG_ANSWER_CACHE_HITS.inc()
+                log.info("[RAG-MLflow] answer cache HIT")
+                return cached
+            RAG_ANSWER_CACHE_MISSES.inc()
+
         if not run_name:
             run_name = f"rag_query_{datetime.now().isoformat()}"
 
@@ -245,16 +297,31 @@ class RAGPipelineWithMLflow:
                     length=len(context),
                 )
 
-                # ÉTAPE 3: GENERATE avec LLMWithMLflow
-                # Note: On passe create_run=False pour utiliser la run courante
-                # et éviter les runs imbriquées
+                # ÉTAPE 3: GENERATE avec LLMWithMLflow (create_run=False → run
+                # courante, pas de run imbriquée).
+                # Résilience C.8 : si le LLM est indisponible (Ollama down /
+                # timeout), on ne renvoie pas une 500 — on construit une réponse
+                # extractive à partir des passages (pas de génération → pas
+                # d'hallucination), tracée par un tag + la métrique fallback.
                 start_generate = time.time()
-                result = await self.llm.generate(context, question, create_run=False)
+                try:
+                    result = await self.llm.generate(
+                        context, question, create_run=False
+                    )
+                    answer = result["response"]
+                    llm_latency = result["latency_ms"]
+                    RAG_LLM_LATENCY.observe(llm_latency / 1000.0)
+                    llm_mode = "llm"
+                except Exception as llm_err:
+                    log.error(
+                        f"[RAG-MLflow] LLM indisponible → fallback extractif: {llm_err}"
+                    )
+                    answer = build_extractive_answer(question, chunks)
+                    llm_latency = 0.0
+                    llm_mode = "fallback_extractive"
+                    RAG_LLM_FALLBACK_TOTAL.inc()
+                    mlflow.set_tag("llm_fallback", "extractive")
                 generate_time = (time.time() - start_generate) * 1000
-
-                answer = result["response"]
-                llm_latency = result["latency_ms"]
-                RAG_LLM_LATENCY.observe(llm_latency / 1000.0)
 
                 mlflow.log_metrics(
                     {
@@ -283,7 +350,7 @@ class RAGPipelineWithMLflow:
                     total_time_ms=retrieve_time + context_time + generate_time,
                 )
 
-                return {
+                response = {
                     "answer": answer,
                     "contexts": chunks,
                     "metrics": {
@@ -292,8 +359,12 @@ class RAGPipelineWithMLflow:
                         "llm_latency_ms": llm_latency,
                         "total_time_ms": retrieve_time + context_time + generate_time,
                         "chunks_retrieved": len(chunks),
+                        "llm_mode": llm_mode,
                     },
                 }
+                if self.answer_cache is not None:
+                    self.answer_cache.set(question, top_k, filters, response)
+                return response
 
             except Exception as e:
                 log.error(f"[RAG-MLflow] Erreur query: {e}", exc_info=True)
@@ -469,13 +540,22 @@ class RAGPipelineWithMLflow:
                         },
                     }
 
-                # GENERATE CHAT (passer create_run=False)
+                # GENERATE CHAT (create_run=False). Même fallback C.8 que query().
                 start_generate = time.time()
-                result = await self.llm.chat(messages, context, create_run=False)
+                try:
+                    result = await self.llm.chat(messages, context, create_run=False)
+                    answer = result["response"]
+                    llm_latency = result["latency_ms"]
+                except Exception as llm_err:
+                    log.error(
+                        f"[RAG-MLflow] LLM indisponible (chat) → fallback: {llm_err}"
+                    )
+                    last_q = messages[-1]["content"] if messages else ""
+                    answer = build_extractive_answer(last_q, chunks)
+                    llm_latency = 0.0
+                    RAG_LLM_FALLBACK_TOTAL.inc()
+                    mlflow.set_tag("llm_fallback", "extractive")
                 generate_time = (time.time() - start_generate) * 1000
-
-                answer = result["response"]
-                llm_latency = result["latency_ms"]
 
                 mlflow.log_metrics(
                     {

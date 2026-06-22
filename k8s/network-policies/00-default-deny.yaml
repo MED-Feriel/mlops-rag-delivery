@@ -1,0 +1,14 @@
+# Deny-by-default : aucun trafic (ingress NI egress) n'est autorisé tant qu'une
+# policy ne l'autorise explicitement. Base de la micro-segmentation (MLOPS-120).
+# Requiert un CNI qui applique les NetworkPolicy (Calico, Cilium…). Le flannel
+# par défaut (k3s) ne les applique PAS.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: rag-livraison
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress

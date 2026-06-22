@@ -48,3 +48,10 @@ class CollectionStats(BaseModel):
     nb_vectors: int
     vector_size: int
     status: str
+
+
+class FeedbackRequest(BaseModel):
+    question: str = Field(..., max_length=500)
+    rating: str  # "up" | "down"
+    answer: Optional[str] = Field(default=None, max_length=2000)
+    comment: Optional[str] = Field(default=None, max_length=1000)

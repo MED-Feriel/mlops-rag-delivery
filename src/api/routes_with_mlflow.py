@@ -10,11 +10,14 @@ Routes FastAPI avec tracking MLflow intégré:
 
 import time
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from src.api.models import QueryRequest, QueryResponse
+from src.api.auth import require_roles
+from src.api.feedback_store import FeedbackStore
+from src.api.models import FeedbackRequest, QueryRequest, QueryResponse
 from src.monitoring.prometheus_metrics import (
     RAG_ACTIVE_REQUESTS,
+    RAG_FEEDBACK_TOTAL,
     RAG_QUERY_DURATION,
     RAG_QUERY_TOTAL,
     extract_zone_filter,
@@ -39,8 +42,24 @@ def _get_pipeline() -> RAGPipelineWithMLflow:
     return _pipeline
 
 
+_feedback_store: FeedbackStore | None = None
+_feedback_store_ready = False
+
+
+def _get_feedback_store() -> FeedbackStore | None:
+    """Store de feedback (singleton, lazy). None si Redis indisponible."""
+    global _feedback_store, _feedback_store_ready
+    if not _feedback_store_ready:
+        _feedback_store = FeedbackStore.from_settings(get_settings())
+        _feedback_store_ready = True
+    return _feedback_store
+
+
 @router.post("/query", response_model=QueryResponse)
-async def query(req: QueryRequest) -> QueryResponse:
+async def query(
+    req: QueryRequest,
+    principal=Depends(require_roles("user", "admin", "service")),
+) -> QueryResponse:
     """
     Requête RAG simple.
 
@@ -77,8 +96,8 @@ async def query(req: QueryRequest) -> QueryResponse:
 
         log.info(
             "[API] Query OK",
-            chunks=result["metrics"]["chunks_retrieved"],
-            total_time_ms=result["metrics"]["total_time_ms"],
+            chunks=result["metrics"].get("chunks_retrieved"),
+            total_time_ms=result["metrics"].get("total_time_ms"),
         )
 
         return response
@@ -91,13 +110,16 @@ async def query(req: QueryRequest) -> QueryResponse:
         status = "error"
         RAG_QUERY_TOTAL.labels(status=status, zone_filter=zone).inc()
         log.error(f"[API] Erreur query: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        detail = str(e) or f"{type(e).__name__} (aucun détail — voir les logs API)"
+        raise HTTPException(status_code=500, detail=detail)
     finally:
         RAG_ACTIVE_REQUESTS.dec()
 
 
 @router.post("/query/stream")
-async def query_stream(req: QueryRequest) -> StreamingResponse:
+async def query_stream(
+    req: QueryRequest, principal=Depends(require_roles("user", "admin"))
+) -> StreamingResponse:
     """
     Requête RAG avec streaming.
 
@@ -127,7 +149,9 @@ async def query_stream(req: QueryRequest) -> StreamingResponse:
 
 
 @router.post("/chat", response_model=QueryResponse)
-async def chat(req: QueryRequest) -> QueryResponse:
+async def chat(
+    req: QueryRequest, principal=Depends(require_roles("user", "admin"))
+) -> QueryResponse:
     """
     Chat RAG avec historique.
 
@@ -172,8 +196,8 @@ async def chat(req: QueryRequest) -> QueryResponse:
 
         log.info(
             "[API] Chat OK",
-            chunks=result["metrics"]["chunks_retrieved"],
-            total_time_ms=result["metrics"]["total_time_ms"],
+            chunks=result["metrics"].get("chunks_retrieved"),
+            total_time_ms=result["metrics"].get("total_time_ms"),
         )
 
         return response
@@ -187,8 +211,118 @@ async def chat(req: QueryRequest) -> QueryResponse:
         RAG_ACTIVE_REQUESTS.dec()
 
 
+@router.get("/cache/stats")
+async def cache_stats(principal=Depends(require_roles("admin", "service"))) -> dict:
+    """Statistiques des caches Redis : embeddings (B.1) et réponses (B.2)."""
+    pipeline = _get_pipeline()
+    retriever = pipeline.retriever
+    if getattr(retriever, "cache_enabled", False):
+        stats = retriever.cache.get_stats()
+        out = {
+            "enabled": True,
+            "hit_rate_pct": stats["hit_rate"],
+            "hits": stats["hit"],
+            "misses": stats["miss"],
+            "errors": stats["error"],
+            "total_requests": stats["total"],
+            "ttl_sec": get_settings().redis_ttl_embedding_sec,
+        }
+    else:
+        out = {"enabled": False, "message": "Cache Redis non disponible"}
+
+    answer_cache = getattr(pipeline, "answer_cache", None)
+    if answer_cache is not None:
+        a = answer_cache.get_stats()
+        out["answer_cache"] = {
+            "enabled": True,
+            "hit_rate_pct": a["hit_rate"],
+            "hits": a["hit"],
+            "misses": a["miss"],
+            "ttl_sec": get_settings().redis_ttl_answer_sec,
+        }
+    else:
+        out["answer_cache"] = {"enabled": False}
+    return out
+
+
+@router.delete("/cache/flush")
+async def cache_flush(principal=Depends(require_roles("admin"))) -> dict:
+    """Vide le cache Redis (utile après mise à jour du modèle d'embedding)."""
+    retriever = _get_pipeline().retriever
+    if not getattr(retriever, "cache_enabled", False):
+        return {"flushed": 0, "message": "Cache non disponible"}
+    deleted = retriever.cache.flush()
+    return {"flushed": deleted, "message": f"{deleted} entrées supprimées"}
+
+
+@router.delete("/cache/invalidate")
+async def cache_invalidate(
+    query: str, principal=Depends(require_roles("admin"))
+) -> dict:
+    """Invalide l'entrée de cache d'une seule question (invalidation ciblée).
+
+    Contrairement à ``/cache/flush`` (purge totale), n'enlève que le vecteur
+    associé à ``query`` — utile après ré-indexation/correction d'un document
+    précis sans jeter tout le cache. La normalisation (casse + espaces) est
+    identique à celle utilisée à l'écriture, donc « Quels retards ? » invalide
+    bien « quels retards ? ».
+    """
+    if not query or not query.strip():
+        raise HTTPException(status_code=400, detail="paramètre 'query' requis")
+    retriever = _get_pipeline().retriever
+    if not getattr(retriever, "cache_enabled", False):
+        return {"invalidated": False, "message": "Cache non disponible"}
+    removed = retriever.cache.invalidate(query)
+    return {"invalidated": removed, "query": query}
+
+
+@router.post("/feedback")
+async def submit_feedback(
+    req: FeedbackRequest,
+    principal=Depends(require_roles("user", "admin", "service")),
+) -> dict:
+    """Enregistre un feedback 👍/👎 sur une réponse RAG.
+
+    Triple destination : compteur Prometheus (``rag_feedback_total`` → Grafana),
+    log structuré (→ Elasticsearch/Kibana) et historique Redis (best-effort, via
+    le feedback store). Le rating doit valoir ``up`` ou ``down``.
+    """
+    rating = (req.rating or "").strip().lower()
+    if rating not in ("up", "down"):
+        raise HTTPException(status_code=400, detail="rating doit être 'up' ou 'down'")
+
+    RAG_FEEDBACK_TOTAL.labels(rating=rating).inc()
+    log.info(
+        "rag_feedback",
+        rating=rating,
+        question=(req.question or "")[:120],
+        has_comment=bool(req.comment),
+    )
+
+    store = _get_feedback_store()
+    persisted = (
+        store.record(rating, req.question, req.answer or "", req.comment or "")
+        if store is not None
+        else False
+    )
+    return {"recorded": True, "rating": rating, "persisted": persisted}
+
+
+@router.get("/feedback/stats")
+async def feedback_stats(
+    principal=Depends(require_roles("admin", "service")),
+) -> dict:
+    """Compteurs 👍/👎, taux de satisfaction et derniers feedbacks reçus."""
+    store = _get_feedback_store()
+    if store is None:
+        return {"enabled": False, "message": "Feedback store (Redis) non disponible"}
+    return store.get_stats()
+
+
 @router.post("/chat/stream")
-async def chat_stream(req: QueryRequest) -> StreamingResponse:
+async def chat_stream(
+    req: QueryRequest, principal=Depends(require_roles("user", "admin"))
+) -> StreamingResponse:
     """Chat RAG avec streaming."""
     try:
         messages = req.messages or []

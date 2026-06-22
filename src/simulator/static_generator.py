@@ -458,7 +458,7 @@ def _process_events(
         i["type"].append(type_court)
         i["severite"].append(sev)
         i["description"].append(
-            f"[{sev.upper()}] {et} (zone={ei.get('zone','?')}, raison={ei.get('raison','-')})"
+            f"[{sev.upper()}] {et} (zone={ei.get('zone', '?')}, raison={ei.get('raison', '-')})"
         )
         i["resolu"].append(resolu)
         i["source_service"].append(ei["source_service"])

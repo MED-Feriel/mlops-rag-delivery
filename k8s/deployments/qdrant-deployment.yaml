@@ -1,0 +1,62 @@
+# Déploiement de Qdrant (base vectorielle). 1 seul replica : Qdrant est
+# stateful et ne fait pas de réplication "simple" (le clustering distribué
+# nécessite une configuration dédiée, hors périmètre démo).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qdrant
+  namespace: rag-livraison
+  labels:
+    app: qdrant
+spec:
+  replicas: 1
+  # Recreate : on ne veut pas deux pods montant le même PVC RWO en parallèle.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: qdrant
+  template:
+    metadata:
+      labels:
+        app: qdrant
+    spec:
+      containers:
+        - name: qdrant
+          # Version épinglée (compat avec qdrant-client 1.7.3 de l'API ;
+          # expose /readyz /livez /healthz utilisés par les probes).
+          image: qdrant/qdrant:v1.12.4
+          ports:
+            - name: http
+              containerPort: 6333   # API REST (utilisée par l'API RAG)
+            - name: grpc
+              containerPort: 6334   # gRPC (optionnel)
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+          # NB : Qdrant n'expose PAS /health (→ 404). Les vrais endpoints sont
+          # /readyz (shards prêts) et /livez (process vivant). Vérifié en live.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 6333
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: 6333
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          volumeMounts:
+            - name: storage
+              mountPath: /qdrant/storage
+      volumes:
+        - name: storage
+          persistentVolumeClaim:
+            claimName: qdrant-pvc

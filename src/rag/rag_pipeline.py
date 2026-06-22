@@ -27,12 +27,34 @@ class RAGPipeline:
             port=settings.qdrant_port,
             collection=settings.qdrant_collection,
         )
-        self.retriever = RetrievalService(self.embedder, self.vector_store)
+        self.retriever = RetrievalService(
+            self.embedder, self.vector_store, settings=settings
+        )
+        # Retrieval hybride (dense + BM25 + RRF) activé par défaut ; basculable
+        # via la config pour comparer/débuguer face au dense pur.
+        self.use_hybrid = getattr(settings, "retrieval_hybrid", True)
         self.llm = LLMService(
             host=settings.ollama_host,
             port=settings.ollama_port,
             model=settings.ollama_model,
             timeout=settings.ollama_timeout,
+        )
+
+    def _retrieve(
+        self, query: str, retrieve_k: int, filters: Optional[dict]
+    ) -> list[dict]:
+        """Dispatche vers le retrieval hybride ou dense selon ``use_hybrid``.
+
+        Centralise le choix de stratégie et le seuil de score pour les 4 points
+        d'entrée du pipeline (query / stream / chat / chat_stream).
+        """
+        threshold = self._threshold_for(filters)
+        if self.use_hybrid:
+            return self.retriever.retrieve_hybrid(
+                query, top_k=retrieve_k, filters=filters, score_threshold=threshold
+            )
+        return self.retriever.retrieve(
+            query, top_k=retrieve_k, filters=filters, score_threshold=threshold
         )
 
     def _rewrite_and_merge_filters(
@@ -70,12 +92,7 @@ class RAGPipeline:
         # Si on filtre par date post-retrieval, on récupère plus large pour
         # garder du contexte après l'élagage.
         retrieve_k = top_k * 3 if date_range else top_k
-        chunks = self.retriever.retrieve(
-            question,
-            top_k=retrieve_k,
-            filters=merged_filters,
-            score_threshold=self._threshold_for(merged_filters),
-        )
+        chunks = self._retrieve(question, retrieve_k, merged_filters)
         chunks = filter_by_date_range(chunks, date_range)[:top_k]
         context = build_context(chunks)
         ok, refus = check_context(context)
@@ -89,12 +106,7 @@ class RAGPipeline:
     ) -> AsyncGenerator[str, None]:
         merged_filters, date_range = self._rewrite_and_merge_filters(question, filters)
         retrieve_k = top_k * 3 if date_range else top_k
-        chunks = self.retriever.retrieve(
-            question,
-            top_k=retrieve_k,
-            filters=merged_filters,
-            score_threshold=self._threshold_for(merged_filters),
-        )
+        chunks = self._retrieve(question, retrieve_k, merged_filters)
         chunks = filter_by_date_range(chunks, date_range)[:top_k]
         context = build_context(chunks)
         ok, refus = check_context(context)
@@ -105,12 +117,14 @@ class RAGPipeline:
             yield token
 
     @staticmethod
-    def _build_embedding_query(messages: list[dict], history_window: int = 3) -> str:
+    def _build_embedding_query(messages: list[dict], history_window: int = 1) -> str:
         """Construit la requête d'embedding à partir des derniers messages user.
 
-        Permet de résoudre les références implicites comme « ces retards » :
-        on concatène les N derniers messages user pour que la recherche
-        vectorielle voie le contexte conversationnel.
+        Par défaut on n'utilise que la DERNIÈRE question (history_window=1) :
+        concaténer plusieurs questions distinctes (« restaurants ? » puis
+        « zones ? ») contaminait la recherche vectorielle et faisait répondre
+        l'assistant sur le mauvais sujet. Pour résoudre un suivi court avec
+        référence implicite (« et pour ces retards ? »), augmenter la fenêtre.
         """
         user_msgs = [m["content"] for m in messages if m.get("role") == "user"]
         recent = user_msgs[-history_window:]
@@ -124,18 +138,17 @@ class RAGPipeline:
             embedding_query, filters
         )
         retrieve_k = top_k * 3 if date_range else top_k
-        chunks = self.retriever.retrieve(
-            embedding_query,
-            top_k=retrieve_k,
-            filters=merged_filters,
-            score_threshold=self._threshold_for(merged_filters),
-        )
+        chunks = self._retrieve(embedding_query, retrieve_k, merged_filters)
         chunks = filter_by_date_range(chunks, date_range)[:top_k]
         context = build_context(chunks)
         ok, refus = check_context(context)
         if not ok:
             return {"answer": refus, "contexts": chunks}
-        answer = await self.llm.chat(messages=messages, context=context)
+        # Génération mono-tour sur la DERNIÈRE question : passer tout l'historique
+        # au petit modèle le contamine (il répète la réponse précédente sur une
+        # nouvelle question). On répond donc indépendamment à chaque question,
+        # même dans un même chat.
+        answer = await self.llm.generate(context=context, question=embedding_query)
         return {"answer": answer, "contexts": chunks}
 
     async def chat_stream(
@@ -146,17 +159,14 @@ class RAGPipeline:
             embedding_query, filters
         )
         retrieve_k = top_k * 3 if date_range else top_k
-        chunks = self.retriever.retrieve(
-            embedding_query,
-            top_k=retrieve_k,
-            filters=merged_filters,
-            score_threshold=self._threshold_for(merged_filters),
-        )
+        chunks = self._retrieve(embedding_query, retrieve_k, merged_filters)
         chunks = filter_by_date_range(chunks, date_range)[:top_k]
         context = build_context(chunks)
         ok, refus = check_context(context)
         if not ok:
             yield refus
             return
-        async for token in self.llm.chat_stream(messages=messages, context=context):
+        # Mono-tour sur la dernière question (cf. chat()) : évite la contamination
+        # de l'historique avec un petit modèle.
+        async for token in self.llm.stream(context=context, question=embedding_query):
             yield token

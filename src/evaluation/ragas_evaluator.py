@@ -8,6 +8,8 @@ FLUX:
   questions → build_dataset → RAGAS evaluate → scores → MLflow
 """
 
+import os
+
 from ragas import evaluate
 from ragas.metrics import (
     faithfulness,
@@ -15,6 +17,10 @@ from ragas.metrics import (
     context_precision,
     context_recall,
 )
+from ragas.llms import LangchainLLMWrapper
+from ragas.embeddings import LangchainEmbeddingsWrapper
+from langchain_community.chat_models import ChatOllama
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from datasets import Dataset
 import mlflow
 import structlog
@@ -23,6 +29,10 @@ import pandas as pd
 from typing import Optional, Dict
 from pathlib import Path
 from datetime import datetime
+
+_OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+_OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:1b")
+_EMBED_MODEL = os.getenv("EMBEDDING_MODEL", "paraphrase-multilingual-MiniLM-L12-v2")
 
 log = structlog.get_logger()
 
@@ -75,9 +85,9 @@ class RAGASEvaluator:
                 data["ground_truth"].append(q.get("ground_truth", ""))
 
                 if (i + 1) % 5 == 0:
-                    log.info("[RAGAS] Progression: {i+1}/{len(questions)}")
-            except Exception:
-                log.error("[RAGAS] Erreur pour question {i}: {e}")
+                    log.info(f"[RAGAS] Progression: {i+1}/{len(questions)}")
+            except Exception as e:
+                log.error(f"[RAGAS] Erreur pour question {i}: {e}")
                 continue
 
         log.info("[RAGAS] Dataset construit", nb_samples=len(data["question"]))
@@ -106,9 +116,24 @@ class RAGASEvaluator:
             # Construire le dataset
             dataset = await self.build_eval_dataset(questions)
 
-            # Évaluer
-            log.info("[RAGAS] Évaluation en cours...")
-            results = evaluate(dataset, metrics=self.METRICS)
+            # Évaluer avec LLM Ollama local (pas d'OpenAI requis)
+            log.info(
+                "[RAGAS] Évaluation en cours...",
+                llm=_OLLAMA_MODEL,
+                base_url=_OLLAMA_BASE_URL,
+            )
+            ragas_llm = LangchainLLMWrapper(
+                ChatOllama(model=_OLLAMA_MODEL, base_url=_OLLAMA_BASE_URL)
+            )
+            ragas_embeddings = LangchainEmbeddingsWrapper(
+                HuggingFaceEmbeddings(model_name=_EMBED_MODEL)
+            )
+            results = evaluate(
+                dataset,
+                metrics=self.METRICS,
+                llm=ragas_llm,
+                embeddings=ragas_embeddings,
+            )
 
             # Extraire les scores
             scores = {
@@ -141,8 +166,8 @@ class RAGASEvaluator:
 
             return scores
 
-        except Exception:
-            log.error("[RAGAS] Erreur evaluate_and_log: {e}", exc_info=True)
+        except Exception as e:
+            log.error(f"[RAGAS] Erreur evaluate_and_log: {e}", exc_info=True)
             raise
 
     def _save_eval_artifacts(self, results, dataset, scores: Dict[str, float]) -> None:
@@ -186,8 +211,8 @@ class RAGASEvaluator:
 
             log.info("[RAGAS] Artifacts sauvegardés", artifact_dir=str(artifact_dir))
 
-        except Exception:
-            log.warning("[RAGAS] Erreur save_artifacts (non-bloquant): {e}")
+        except Exception as e:
+            log.warning(f"[RAGAS] Erreur save_artifacts (non-bloquant): {e}")
 
     def compare_runs(
         self, metric: str = "faithfulness", top_n: int = 10
@@ -227,6 +252,6 @@ class RAGASEvaluator:
 
             return comparison
 
-        except Exception:
-            log.error("[RAGAS] Erreur compare_runs: {e}")
+        except Exception as e:
+            log.error(f"[RAGAS] Erreur compare_runs: {e}")
             return pd.DataFrame()

@@ -127,6 +127,12 @@ _SYNTHESE_PATTERN = (
     r"\bcauses?\b|\bpourquoi\b|\braisons?\b|\bfacteurs?\b"
     r"|\bsynth[èe]se\b|\br[ée]sum[eé]\b|\borigine[s]?\b|\bexplique"
     r"|\bfr[ée]quent|\br[ée]current"
+    # Questions superlatives / classement (« le plus de retards », « top
+    # restaurants », « les pires zones ») : on veut le document agrégé Top-N
+    # — déjà classé et dédupliqué — plutôt qu'une liste d'événements
+    # individuels qui produisent des doublons côté LLM.
+    r"|\b(?:le|la|les)\s+plus\b|\btop\b|\bclassement\b|\bpalmar[èe]s\b"
+    r"|\bpires?\b|\bmeilleur"
 )
 
 # ── Types d'événement ──────────────────────────────────────────
@@ -310,11 +316,17 @@ def rewrite_query(query: str) -> dict:
         qdrant_filters["zone"] = zone
         matched["zone"] = zone
 
-    # Intention de synthèse/diagnostic (F4) → on laisse remonter les docs agrégés
-    # (synthese-*) en n'appliquant PAS le filtre type_event qui les exclurait.
+    # Intention de synthèse/diagnostic (F1 superlatifs / F4) → on cible la source
+    # agrégée. Indispensable sur le corpus complet : les ~19 docs `synthese` (qui
+    # contiennent les classements et diagnostics) se noient sinon parmi les 74K
+    # avis_clients / 92K incidents, et le modèle répond à partir d'un avis isolé.
+    # On n'applique pas ce filtre aux entités métier (resto/livreur) ni aux
+    # familles 2/3 temps réel (déjà routées vers leur source).
     is_synthese = bool(re.search(_SYNTHESE_PATTERN, q_lower))
     if is_synthese:
         matched["synthese"] = True
+        if not famille and not metier_entity:
+            qdrant_filters["source"] = "synthese"
 
     # type_event ne s'applique pas aux sources temps réel (ES/Prometheus), aux
     # requêtes ciblant une entité métier (resto/livreur), ni aux synthèses.

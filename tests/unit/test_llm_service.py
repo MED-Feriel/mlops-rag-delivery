@@ -65,7 +65,7 @@ def test_build_chat_prompt_includes_history_and_last_question():
     ]
     p = svc._build_chat_prompt(msgs, "CTX")
     assert "Q_LAST" in p
-    assert "HISTORIQUE" in p
+    assert "historique" in p.lower()
     assert "Q1" in p
     assert "R1" in p
     assert "CTX" in p
@@ -75,7 +75,7 @@ def test_build_chat_prompt_without_history():
     svc = LLMService("h", 11434)
     p = svc._build_chat_prompt([{"role": "user", "content": "only"}], "CTX")
     assert "only" in p
-    assert "HISTORIQUE" not in p
+    assert "historique" not in p.lower()
 
 
 def test_build_chat_prompt_empty_messages_does_not_crash():

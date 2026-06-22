@@ -19,6 +19,19 @@ def client():
     return TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def _auth_disabled(monkeypatch):
+    """Tests d'endpoints hermétiques : auth désactivée quel que soit l'env
+    ambiant (sinon /v1/chat/completions & /query renvoient 401 si
+    AUTH_ENABLED=true dans le conteneur)."""
+    monkeypatch.setenv("AUTH_ENABLED", "false")
+    from config.settings import get_settings
+
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
 def test_metrics_endpoint_returns_200(client):
     r = client.get("/metrics")
     assert r.status_code == 200
@@ -136,7 +149,7 @@ def test_list_models_returns_rag_livraison(client):
     data = r.json()
     assert data["object"] == "list"
     assert len(data["data"]) >= 1
-    assert data["data"][0]["id"] == "rag-livraison"
+    assert data["data"][0]["id"] == "Assistant Intelligent"
     assert data["data"][0]["object"] == "model"
 
 
@@ -144,7 +157,7 @@ def test_chat_completions_rejects_payload_without_user_message(client):
     r = client.post(
         "/v1/chat/completions",
         json={
-            "model": "rag-livraison",
+            "model": "Assistant Intelligent",
             "messages": [{"role": "system", "content": "soit utile"}],
             "stream": False,
         },
@@ -157,7 +170,7 @@ def test_chat_completions_rejects_invalid_role(client):
     r = client.post(
         "/v1/chat/completions",
         json={
-            "model": "rag-livraison",
+            "model": "Assistant Intelligent",
             "messages": [{"role": "invalid_role", "content": "hi"}],
         },
     )
@@ -174,7 +187,7 @@ def test_chat_completions_non_stream_returns_completion(client):
         r = client.post(
             "/v1/chat/completions",
             json={
-                "model": "rag-livraison",
+                "model": "Assistant Intelligent",
                 "messages": [{"role": "user", "content": "Quels livreurs en retard ?"}],
                 "stream": False,
             },
@@ -182,7 +195,7 @@ def test_chat_completions_non_stream_returns_completion(client):
     assert r.status_code == 200
     payload = r.json()
     assert payload["object"] == "chat.completion"
-    assert payload["model"] == "rag-livraison"
+    assert payload["model"] == "Assistant Intelligent"
     assert payload["choices"][0]["message"]["content"] == "Réponse RAG mockée"
     assert payload["choices"][0]["finish_reason"] == "stop"
     assert payload["id"].startswith("chatcmpl-")

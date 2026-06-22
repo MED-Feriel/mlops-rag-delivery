@@ -14,6 +14,47 @@ RAG_QUERY_TOTAL = Counter(
     ["status", "zone_filter"],
 )
 
+RAG_QUERY_FAMILY_TOTAL = Counter(
+    "rag_query_family_total",
+    "Nombre de requêtes par famille d'intent (F1/F2/F3/F4 ou générique)",
+    ["famille"],
+)
+
+RAG_FEEDBACK_TOTAL = Counter(
+    "rag_feedback_total",
+    "Feedback utilisateur sur les réponses RAG (pouce haut/bas)",
+    ["rating"],
+)
+
+RAG_LLM_FALLBACK_TOTAL = Counter(
+    "rag_llm_fallback_total",
+    "Réponses servies en fallback extractif (LLM indisponible)",
+)
+
+RAG_ANSWER_CACHE_HITS = Counter(
+    "rag_answer_cache_hits_total",
+    "Hits du cache Redis de réponses RAG",
+)
+
+RAG_ANSWER_CACHE_MISSES = Counter(
+    "rag_answer_cache_misses_total",
+    "Misses du cache Redis de réponses RAG",
+)
+
+# Drift de distribution (PSI) d'un champ payload Qdrant vs baseline (C.4).
+RAG_DATA_DRIFT_PSI = Gauge(
+    "rag_data_drift_psi",
+    "Population Stability Index d'un champ payload Qdrant vs baseline",
+    ["field"],
+)
+
+# État des dépendances backend (1=up, 0=down) pour le dashboard "Santé backend".
+RAG_DEPENDENCY_UP = Gauge(
+    "rag_dependency_up",
+    "Disponibilité des dépendances backend (1=up, 0=down)",
+    ["dependency"],
+)
+
 # Histograms
 RAG_QUERY_DURATION = Histogram(
     "rag_query_duration_seconds", "Durée totale d'une requête RAG"
@@ -46,6 +87,22 @@ RAG_CONTEXT_SCORE_AVG = Gauge(
 RAG_ACTIVE_REQUESTS = Gauge(
     "rag_active_requests",
     "Nombre de requêtes RAG actives en cours",
+)
+
+RAG_TOP1_SCORE = Gauge(
+    "rag_top1_score",
+    "Score du meilleur document récupéré (top-1)",
+)
+
+# Cache Redis d'embeddings (réutilise RAG_EMBEDDING_DURATION pour la latence).
+RAG_EMBEDDING_CACHE_HITS = Counter(
+    "rag_embedding_cache_hits_total",
+    "Nombre de hits du cache Redis d'embeddings",
+)
+
+RAG_EMBEDDING_CACHE_MISSES = Counter(
+    "rag_embedding_cache_misses_total",
+    "Nombre de misses du cache Redis d'embeddings",
 )
 
 

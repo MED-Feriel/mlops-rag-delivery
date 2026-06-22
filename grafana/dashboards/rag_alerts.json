@@ -1,0 +1,71 @@
+{
+  "id": null,
+  "uid": "rag_alerts",
+  "title": "RAG — Alertes MLOps (centralisé)",
+  "tags": ["rag", "alerts"],
+  "timezone": "browser",
+  "schemaVersion": 37,
+  "version": 2,
+  "refresh": "10s",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Alertes actives (firing)",
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "count(ALERTS{alertstate=\"firing\"}) or on() vector(0)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}, "color": {"mode": "thresholds"}, "decimals": 0}},
+      "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}}
+    },
+    {
+      "type": "stat",
+      "title": "Alertes en attente (pending)",
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "count(ALERTS{alertstate=\"pending\"}) or on() vector(0)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}]}, "color": {"mode": "thresholds"}, "decimals": 0}},
+      "options": {"colorMode": "background", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}}
+    },
+    {
+      "type": "stat",
+      "title": "Règles d'alerte chargées",
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 0},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "count(ALERTS_FOR_STATE) or on() vector(0)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"decimals": 0, "color": {"mode": "fixed", "fixedColor": "blue"}}},
+      "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}}
+    },
+    {
+      "type": "text",
+      "title": "État des alertes",
+      "gridPos": {"h": 4, "w": 24, "x": 0, "y": 6},
+      "options": {
+        "mode": "markdown",
+        "content": "### ✅ Aucune alerte active — système nominal\n\n3 règles Prometheus actives : `HighLLMLatency` (p95 > 10s / 2min), `HighErrorRate` (taux erreur > 5% / 1min), `LowContextScore` (score contexte < 0.25 / 5min).\n\nLe tableau ci-dessous sera automatiquement rempli dès qu'une règle passe en `pending` ou `firing`."
+      }
+    },
+    {
+      "type": "table",
+      "title": "Détail des alertes actives (vide = aucune alerte)",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 10},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "ALERTS{alertstate=\"firing\"}", "format": "table", "instant": true, "refId": "A"}],
+      "options": {"noValue": "✅ Aucune alerte active"},
+      "transformations": [{"id": "organize", "options": {"excludeByName": {"Time": true, "Value": true, "__name__": true}}}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Historique des alertes (6h)",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 18},
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "targets": [
+        {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "ALERTS_FOR_STATE", "legendFormat": "{{alertname}}", "refId": "A"}
+      ],
+      "options": {"noValue": "Aucune alerte dans la fenêtre"},
+      "fieldConfig": {"defaults": {"unit": "short"}}
+    }
+  ],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "timepicker": {}
+}

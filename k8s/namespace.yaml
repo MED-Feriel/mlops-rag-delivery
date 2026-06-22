@@ -1,0 +1,8 @@
+# Namespace dédié — isole toutes les ressources RAG du reste du cluster.
+# Tous les autres manifestes référencent `namespace: rag-livraison`.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rag-livraison
+  labels:
+    app.kubernetes.io/part-of: mlops-rag-delivery

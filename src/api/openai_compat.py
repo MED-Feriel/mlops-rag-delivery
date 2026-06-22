@@ -7,10 +7,11 @@ import time
 import uuid
 from typing import Literal, Optional, AsyncGenerator
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from src.api.auth import require_roles
 from src.rag.rag_pipeline import RAGPipeline
 from config.settings import get_settings
 
@@ -45,7 +46,7 @@ async def list_models() -> dict:
         "object": "list",
         "data": [
             {
-                "id": "rag-livraison",
+                "id": "Assistant Intelligent",
                 "object": "model",
                 "created": int(time.time()),
                 "owned_by": "mlops-rag-delivery",
@@ -103,8 +104,11 @@ async def _stream(
             payload = _chunk_payload(req.model, {"content": token}, chat_id, created)
             yield "data: " + json.dumps(payload) + "\n\n"
     except Exception as e:
+        # str(e) est vide pour certaines exceptions httpx (ReadTimeout, RemoteProtocolError).
+        # On utilise le nom du type comme fallback pour afficher un message utile.
+        msg = str(e) or type(e).__name__
         err = _chunk_payload(
-            req.model, {"content": f"\n[Erreur: {e}]"}, chat_id, created
+            req.model, {"content": f"\n[Erreur: {msg}]"}, chat_id, created
         )
         yield "data: " + json.dumps(err) + "\n\n"
 
@@ -115,7 +119,10 @@ async def _stream(
 
 
 @router.post("/v1/chat/completions")
-async def chat_completions(req: ChatCompletionRequest):
+async def chat_completions(
+    req: ChatCompletionRequest,
+    principal=Depends(require_roles("user", "admin", "service")),
+):
     if not any(m.role == "user" for m in req.messages):
         raise HTTPException(status_code=400, detail="aucun message utilisateur")
 

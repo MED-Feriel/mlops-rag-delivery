@@ -32,9 +32,9 @@ PyJWT==2.8.0
 mlflow==2.10.2
 
 # ── Airflow ──────────────────────────────
-apache-airflow==2.8.3
-apache-airflow-providers-postgres==5.7.1
-apache-airflow-providers-apache-kafka==5.2.0
+# apache-airflow==2.8.3  # installe separement (conteneur docker/etl) : ses pins entrent en conflit avec fastapi/pydantic et cassent l'install CI
+# apache-airflow-providers-postgres==5.7.1
+# apache-airflow-providers-apache-kafka==5.2.0
 
 # ── Monitoring ──────────────────────────
 prometheus-client==0.20.0

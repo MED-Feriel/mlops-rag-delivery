@@ -1,109 +1,168 @@
-# MLOps RAG Delivery
+# 🚚 MLOps RAG Delivery
 
 ![CI](https://github.com/MED-Feriel/mlops-rag-delivery/actions/workflows/ci.yml/badge.svg)
 ![CD](https://github.com/MED-Feriel/mlops-rag-delivery/actions/workflows/cd.yml/badge.svg)
+![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker%20Compose-2496ED?logo=docker&logoColor=white)
+![Qdrant](https://img.shields.io/badge/Qdrant-DC244C?logo=qdrant&logoColor=white)
+![Ollama](https://img.shields.io/badge/Ollama-Gemma%203-000000?logo=ollama&logoColor=white)
 
-Système RAG (Retrieval-Augmented Generation) pour la supervision
-d'une plateforme de livraison de repas. Projet de Fin d'Études —
-ENSTICP 2025.
+> **Assistant RAG** (Retrieval-Augmented Generation) qui supervise **en langage naturel** une plateforme de livraison de repas — de l'ingestion temps réel jusqu'à l'évaluation automatisée, une chaîne **MLOps de bout en bout**.
 
-## Stack technique
+📍 *Projet de Fin d'Études — ENSTICP 2025*
 
-| Composant         | Technologie              |
-|-------------------|--------------------------|
-| LLM               | Gemma3:1b (Ollama)       |
-| Vector Store      | Qdrant (384 dim, Cosine) |
-| Embedding         | all-MiniLM-L6-v2         |
-| Orchestration ETL | Apache Airflow           |
-| API               | FastAPI                  |
-| Évaluation RAG    | RAGAS                    |
-| Monitoring        | Prometheus + Grafana     |
-| Logs              | ELK Stack                |
-| MLOps             | MLflow                   |
+---
 
-## Démarrage rapide
+## 💬 Ce que ça fait
+
+On pose une question en français, l'assistant répond à partir des données **réelles** de la plateforme (commandes, livreurs, incidents, métriques) :
+
+> « **Quel est l'état de la plateforme aujourd'hui ?** »
+> « **Y a-t-il des incidents en cours ?** »
+> « **Quelles commandes sont en retard en ce moment ?** »
+> « **Donne-moi un résumé des dernières 24h** »
+
+Le tout via une **API compatible OpenAI**, branchable directement sur [Open WebUI](https://github.com/open-webui/open-webui) pour une expérience de chat.
+
+## ✨ Points forts
+
+- 🔎 **Retrieval hybride** — dense (embeddings) + lexical (BM25) fusionnés par *Reciprocal Rank Fusion*
+- 🧠 **LLM 100 % local** — Gemma 3 via Ollama : aucune dépendance cloud, données souveraines
+- 🛡️ **Garde-fous anti-hallucination** — réponse de secours si le contexte récupéré est vide
+- ✍️ **Query rewriting** — détection d'intention et de filtres temporels avant la recherche
+- 🔄 **ETL orchestré** (Airflow) sur **3 sources** — PostgreSQL, Kafka (temps réel), Elasticsearch
+- 🔐 **Sécurité API** — authentification JWT + RBAC, audit, rate-limiting
+- ⚡ **Cache Redis** des embeddings de questions pour réduire la latence
+- 📊 **Évaluation RAGAS** — *faithfulness*, *answer relevancy*, *context precision/recall*
+- 📈 **Observabilité complète** — Prometheus + Grafana, logs ELK, suivi d'expériences MLflow
+- ✅ **CI/CD** GitHub Actions — **222 tests** unitaires, couverture **~78 %**, images Docker → GHCR
+
+## 🏗️ Architecture
+
+```mermaid
+flowchart TB
+    subgraph SRC[" Sources de données "]
+        PG[(PostgreSQL<br/>commandes)]
+        KF[Kafka<br/>events temps réel]
+        ES[(Elasticsearch<br/>logs)]
+    end
+
+    SRC --> ETL[ETL · Airflow<br/>extract › clean › chunk › normalize]
+    ETL --> EMB[Embeddings<br/>MiniLM multilingue · 384d]
+    EMB --> QD[(Qdrant<br/>cosine)]
+
+    U[👤 Utilisateur] -->|question FR| API[FastAPI<br/>OpenAI-compatible]
+    API --> QR[Query rewriter<br/>intent + filtres date]
+    QR --> RET[Retrieval hybride<br/>dense + BM25 + RRF]
+    RET <--> QD
+    RET --> GR{Garde-fous<br/>contexte vide ?}
+    GR -->|ok| LLM[Gemma 3 · Ollama]
+    GR -->|vide| FB[Réponse de secours]
+    LLM --> API
+    FB --> API
+    API -->|réponse| U
+
+    API -. métriques .-> OBS[Prometheus / Grafana]
+    API -. logs .-> ELK[ELK]
+    API -. runs .-> ML[MLflow]
+```
+
+## 🧰 Stack technique
+
+| Composant            | Technologie                                   |
+|----------------------|-----------------------------------------------|
+| LLM                  | Gemma 3 (Ollama, CPU-only)                    |
+| Vector Store         | Qdrant (384 dim, Cosine)                      |
+| Embedding            | `paraphrase-multilingual-MiniLM-L12-v2`       |
+| Retrieval            | Hybride dense + BM25 + RRF                    |
+| API                  | FastAPI (routes compatibles OpenAI) + JWT     |
+| Orchestration ETL    | Apache Airflow                                |
+| Streaming            | Kafka (simulateur d'events livraison)         |
+| Cache                | Redis                                         |
+| Évaluation RAG       | RAGAS                                         |
+| Monitoring           | Prometheus + Grafana                          |
+| Logs                 | ELK Stack (Elasticsearch · Logstash · Kibana) |
+| Suivi MLOps          | MLflow                                        |
+| Conteneurisation     | Docker Compose (18 services)                  |
+
+## 🚀 Démarrage rapide
 
 ```bash
-git clone <repo>
+git clone https://github.com/MED-Feriel/mlops-rag-delivery.git
 cd mlops-rag-delivery
 cp .env.example .env
-make up        # Démarre tous les services
+
+make up        # Démarre tous les services (Docker Compose)
 make generate  # Génère les données PostgreSQL
-make simulate  # Lance le simulateur Kafka
-make query     # Teste le RAG
+make simulate  # Lance le simulateur Kafka (events temps réel)
+make query     # Teste le pipeline RAG
 ```
 
-## Interfaces disponibles
+Puis ouvre le **chat** sur <http://localhost:3001> ou la **doc API** sur <http://localhost:8080/docs>.
 
-| Service   | URL                              | Credentials |
-|-----------|----------------------------------|-------------|
-| API RAG   | http://localhost:8080/docs       | —           |
-| Qdrant UI | http://localhost:6333/dashboard  | —           |
-| Airflow   | http://localhost:8081            | admin/admin |
-| MLflow    | http://localhost:5000            | —           |
-| Grafana   | http://localhost:3000            | admin/admin |
-| Kibana    | http://localhost:5601            | —           |
+## 🖥️ Interfaces disponibles
 
-## Résultats RAGAS
+| Service        | URL                              | Identifiants |
+|----------------|----------------------------------|--------------|
+| Chat (Open WebUI) | <http://localhost:3001>       | —            |
+| API RAG (docs) | <http://localhost:8080/docs>     | —            |
+| Qdrant UI      | <http://localhost:6333/dashboard>| —            |
+| Airflow        | <http://localhost:8081>          | admin/admin  |
+| MLflow         | <http://localhost:5000>          | —            |
+| Grafana        | <http://localhost:3000>          | admin/admin  |
+| Kibana         | <http://localhost:5601>          | —            |
 
-| Métrique          | Score                       |
-|-------------------|-----------------------------|
-| Faithfulness      | _à compléter après Prompt B_ |
-| Answer Relevancy  | _à compléter_               |
-| Context Precision | _à compléter_               |
-| Context Recall    | _à compléter_               |
-
-## Tests
+## 🧪 Qualité & tests
 
 ```bash
-python3 -m pytest tests/unit/ -v   # 26 tests unitaires
+pytest tests/unit/ -v        # 222 tests unitaires
+pytest tests/integration/ -v # tests d'intégration (services Docker)
 ```
 
-## Structure du projet
+La CI applique à chaque push : **lint** (flake8 + black), **tests unitaires**, **seuil de couverture ≥ 70 %** (~78 % actuellement) et **tests d'intégration**.
+
+## 📊 Évaluation RAGAS
+
+La qualité des réponses est mesurée avec [RAGAS](https://github.com/explodinggradients/ragas) via `scripts/run_ragas_eval.py`, avec des seuils de gate :
+
+| Métrique          | Seuil   |
+|-------------------|---------|
+| Faithfulness      | ≥ 0.65  |
+| Answer Relevancy  | ≥ 0.60  |
+| Context Precision | suivi   |
+| Context Recall    | suivi   |
+
+> L'évaluation s'exécute **à la demande** (`workflow_dispatch`) : RAGAS nécessite un Qdrant peuplé et un LLM joignables, indisponibles sur les runners GitHub-hosted.
+
+## 🗂️ Structure du projet
 
 ```
 src/
-├── api/            # FastAPI endpoints, OpenAI-compatible routes
-├── embeddings/     # all-MiniLM-L6-v2 embedder
-├── evaluation/     # RAGAS scoring pipeline
+├── api/            # Endpoints FastAPI, routes OpenAI-compatible, JWT/RBAC, audit
+├── embeddings/     # Embedder MiniLM multilingue (+ cache Redis)
+├── evaluation/     # Pipeline de scoring RAGAS
 ├── ingestion/      # ETL : extract / clean / chunk / normalize
-├── llm/            # Gemma3:1b client (Ollama)
-├── monitoring/     # MLflow tracker, model versioning
-├── rag/            # Pipeline RAG complet
-├── retrieval/      # Service de retrieval Qdrant
+├── llm/            # Client Gemma 3 (Ollama)
+├── monitoring/     # Métriques Prometheus, tracker MLflow, versioning
+├── rag/            # Pipeline RAG complet (rewrite → retrieve → guardrails → generate)
+├── retrieval/      # Retrieval hybride Qdrant + BM25
 ├── simulator/      # Producteur Kafka (events livraison)
 └── vector_store/   # Wrapper Qdrant
 ```
 
-## CI/CD Setup
+## ⚙️ CI/CD
 
-Trois workflows GitHub Actions sont fournis dans `.github/workflows/` :
+Workflows GitHub Actions (`.github/workflows/`) :
 
-| Workflow                | Trigger                                  | Rôle                                                 |
-|-------------------------|------------------------------------------|------------------------------------------------------|
-| `ci.yml`                | push (toutes branches), PR vers `main`   | Lint (flake8 + black), tests unitaires + couverture (≥70%), tests d'intégration |
-| `cd.yml`                | push sur `main`                          | Build & push des images Docker `api` / `simulator` vers `ghcr.io` (tags `latest`, `${{ sha }}`, et `vX.Y.Z` si le message de commit contient `release vX.Y.Z`) |
-| `model_validation.yml`  | cron nightly 03:00 UTC + dispatch manuel + PR sur code RAG | Exécute `scripts/run_ragas_eval.py` dans le container API ; échoue si `faithfulness < 0.65` ou `answer_relevancy < 0.60` ; commente le résultat sur la PR |
+| Workflow               | Déclencheur                              | Rôle                                                                 |
+|------------------------|------------------------------------------|---------------------------------------------------------------------|
+| `ci.yml`               | push (toutes branches), PR vers `main`   | Lint + tests unitaires & couverture (≥ 70 %) + tests d'intégration   |
+| `cd.yml`               | push sur `main`                          | Build & push des images Docker `api` / `simulator` vers `ghcr.io`    |
+| `model_validation.yml` | manuel (`workflow_dispatch`)             | Évaluation RAGAS (à lancer quand une infra d'éval est disponible)    |
 
-### Secrets GitHub à configurer
+L'authentification GHCR utilise le **`GITHUB_TOKEN`** automatique (permission `packages: write`) — aucun PAT à configurer. Pour publier une image versionnée, inclure `release vX.Y.Z` dans le message de commit poussé sur `main` : la CD taguera `api` et `simulator` avec `vX.Y.Z` en plus de `latest` et du SHA.
 
-Dans **Settings → Secrets and variables → Actions**, ajouter :
+---
 
-| Secret              | Description                                                                 |
-|---------------------|-----------------------------------------------------------------------------|
-| `QDRANT_HOST`       | Hôte du service Qdrant utilisé pour les tests d'intégration et l'éval RAGAS |
-| `QDRANT_PORT`       | Port Qdrant (par défaut `6333`)                                             |
-| `POSTGRES_PASSWORD` | Mot de passe Postgres pour les jobs nécessitant une connexion DB            |
-| `GHCR_TOKEN`        | Personal Access Token (scopes `write:packages`, `read:packages`) pour pousser sur `ghcr.io` |
-| `CODECOV_TOKEN`     | (optionnel) Token Codecov pour l'upload de couverture                       |
-
-### Tag de release
-
-Pour publier une image versionnée, inclure `release vX.Y.Z` dans le message de commit poussé sur `main` :
-
-```bash
-git commit -m "release v1.2.0 - nouvelles features RAG"
-git push origin main
-```
-
-Le workflow `cd.yml` détectera la version et taguera les images `api` et `simulator` avec `v1.2.0` en plus de `latest` et du SHA.
+<p align="center"><sub>Projet de Fin d'Études — ENSTICP 2025 · RAG · MLOps · Observabilité</sub></p>

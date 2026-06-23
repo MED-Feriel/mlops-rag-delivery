@@ -1,17 +1,9 @@
 name: Model Validation (RAGAS)
 
+# Declenchement manuel uniquement : RAGAS necessite un Qdrant peuple et un LLM
+# (Ollama) joignables, indisponibles sur les runners GitHub-hosted.
 on:
-  schedule:
-    - cron: "0 3 * * *"
   workflow_dispatch:
-  pull_request:
-    branches: [main]
-    paths:
-      - "src/rag/**"
-      - "src/retrieval/**"
-      - "src/llm/**"
-      - "src/embeddings/**"
-      - "scripts/run_ragas_eval.py"
 
 permissions:
   contents: read

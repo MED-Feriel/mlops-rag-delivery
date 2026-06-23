@@ -2,6 +2,7 @@
 
 ![CI](https://github.com/MED-Feriel/mlops-rag-delivery/actions/workflows/ci.yml/badge.svg)
 ![CD](https://github.com/MED-Feriel/mlops-rag-delivery/actions/workflows/cd.yml/badge.svg)
+![CT](https://github.com/MED-Feriel/mlops-rag-delivery/actions/workflows/ct.yml/badge.svg)
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker%20Compose-2496ED?logo=docker&logoColor=white)
@@ -37,6 +38,16 @@ Le tout via une **API compatible OpenAI**, branchable directement sur [Open WebU
 - 📊 **Évaluation RAGAS** — *faithfulness*, *answer relevancy*, *context precision/recall*
 - 📈 **Observabilité complète** — Prometheus + Grafana, logs ELK, suivi d'expériences MLflow
 - ✅ **CI/CD** GitHub Actions — **222 tests** unitaires, couverture **~78 %**, images Docker → GHCR
+
+## 🔁 Cycle MLOps (CI · CD · CT)
+
+Le projet matérialise les trois piliers MLOps, chacun outillé par un workflow GitHub Actions :
+
+| Pilier | Workflow | Rôle |
+|--------|----------|------|
+| **CI** — *Continuous Integration* | `ci.yml` | Lint + tests unitaires & couverture (≥ 70 %) + tests d'intégration |
+| **CD** — *Continuous Delivery* | `cd.yml` | Build & push des images Docker `api` / `simulator` vers GHCR |
+| **CT** — *Continuous Training* | `ct.yml` | Ré-ingestion + ré-évaluation périodique du pipeline RAG (embeddings → Qdrant → retrieval) ; éval qualité approfondie via RAGAS + suivi MLflow |
 
 ## 🏗️ Architecture
 

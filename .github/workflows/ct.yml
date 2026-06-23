@@ -1,0 +1,56 @@
+# CT — Continuous Training (MLOps).
+# 3e pilier du cycle CI / CD / CT : ré-ingestion + ré-évaluation périodique du
+# pipeline RAG (embeddings → Qdrant → retrieval hybride) contre une infra
+# fraîche, pour détecter toute régression de la qualité de récupération.
+# L'évaluation qualité approfondie (RAGAS, qui nécessite un LLM) reste dans le
+# workflow `Model Validation` (manuel).
+name: CT
+
+on:
+  schedule:
+    - cron: "0 4 * * 1" # lundi 04:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  retrain-eval:
+    name: Continuous Training & Evaluation
+    runs-on: ubuntu-latest
+    services:
+      qdrant:
+        image: qdrant/qdrant:latest
+        ports:
+          - 6333:6333
+    env:
+      QDRANT_HOST: localhost
+      QDRANT_PORT: 6333
+      PYTHONPATH: src:.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Ré-validation du pipeline RAG (embeddings + retrieval Qdrant)
+        run: pytest tests/integration/ -v
+
+      - name: Résumé CT
+        if: always()
+        run: |
+          {
+            echo "## 🔁 Continuous Training — ré-évaluation du pipeline RAG"
+            echo ""
+            echo "- Embeddings + ingestion + retrieval hybride revalidés contre un Qdrant frais."
+            echo "- Évaluation qualité approfondie (RAGAS) : voir le workflow \`Model Validation\` (manuel, infra LLM requise)."
+          } >> "$GITHUB_STEP_SUMMARY"
